@@ -4,6 +4,12 @@
 
 A native SwiftUI and Swift Charts demo for portfolio analysis, account management, and comparison across accounts. Requires iOS 17 or later and has no third-party runtime dependencies.
 
+## Download and install on iPhone
+
+**[Download HSBC-SG.ipa](https://github.com/targetkiller/HSBCSGWealthDemo/releases/latest/download/HSBC-SG.ipa)** · **[Sideloadly installation guide](docs/SIDELOADLY.md)** · [中文安装指南](docs/SIDELOADLY.zh-CN.md)
+
+Install the device build with Sideloadly on a Mac or Windows computer and your own free Apple Account. No paid Apple Developer membership is required. Free signing lasts 7 days and can be renewed; opening the download link on an iPhone alone does not install the app. See the guide for setup and automatic refresh.
+
 The installed app is named **HSBC SG** and uses the supplied HSBC SG icon. The Xcode project and scheme are named `WealthHub`.
 
 Based on the [Figma Wealth Hub design](https://www.figma.com/design/asmxuHgmIG5e4NMJHstoZh/Untitled?node-id=0-1). The app uses the design's Home / Pay / Cards / Wealth navigation at the top and opens on Wealth. The main focus is portfolio analysis, adding holdings, account selection, allocation, risk and stress scenarios, product previews, and the assistant bar. Home, Pay, Cards, and product journeys are lightweight previews.
@@ -21,6 +27,16 @@ bash scripts/run-demo.sh
 ```
 
 The script uses a booted iPhone simulator, or the first available iPhone if none is running. You can pass a simulator UDID as an argument. Xcode, an iOS simulator runtime, and Python 3 are required. If XcodeGen is installed, the script regenerates the project; otherwise, it uses the committed `.xcodeproj`.
+
+## Build the Sideloadly IPA
+
+On a Mac with Xcode and its iOS SDK installed, run:
+
+```bash
+./scripts/build-sideloadly.sh
+```
+
+This builds an unsigned ARM64 **device** app in Release mode and packages `build/Sideloadly/HSBC-SG.ipa` with a SHA-256 checksum file alongside it. No developer certificate is needed to build this package; Sideloadly signs it during installation. Build output stays outside Git. Pass an output directory as the first argument if needed.
 
 ## Screenshots
 

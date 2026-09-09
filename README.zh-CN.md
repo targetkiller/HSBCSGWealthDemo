@@ -4,6 +4,12 @@
 
 原生 SwiftUI + Swift Charts 资产分析、多账户管理与账户对比 Demo。最低 iOS 17，无第三方运行时依赖。
 
+## 下载并安装到 iPhone
+
+**[下载 HSBC-SG.ipa](https://github.com/targetkiller/HSBCSGWealthDemo/releases/latest/download/HSBC-SG.ipa)** · **[Sideloadly 中文安装指南](docs/SIDELOADLY.zh-CN.md)** · [English installation guide](docs/SIDELOADLY.md)
+
+使用 Mac 或 Windows 电脑上的 Sideloadly，以自己的免费 Apple Account 为真机安装包签名并安装，无需付费 Apple Developer 会员。免费签名有效期为 7 天，可以续签；只在 iPhone 上点击下载链接无法直接安装。配置和自动续签方法见安装指南。
+
 安装后的 App 名称为 **HSBC SG**，图标使用用户提供的 HSBC SG 图片。工程与 scheme 仍为 `WealthHub`。
 
 设计依据：[Figma Wealth Hub](https://www.figma.com/design/asmxuHgmIG5e4NMJHstoZh/Untitled?node-id=0-1)。主界面使用原稿的 Home／Pay／Cards／Wealth 顶部导航，默认进入 Wealth，移除原有自定义底部 Tab Bar。重点展示 Wealth 分析卡片、添加其他持仓、账户选择、配置分析、风险／压力测试、产品服务与底部助手栏。Pay／Cards／Home 和产品业务仅保留简洁预览。
@@ -21,6 +27,16 @@ bash scripts/run-demo.sh
 ```
 
 脚本选择已启动的 iPhone 模拟器（否则使用第一个可用 iPhone）；也可传入模拟器 UDID。需要已安装 Xcode、iOS 模拟器运行时及 Python 3。若有 XcodeGen，自动重新生成工程；否则使用已提交的 `.xcodeproj`。
+
+## 构建 Sideloadly 安装包
+
+在已安装 Xcode 和 iOS SDK 的 Mac 上运行：
+
+```bash
+./scripts/build-sideloadly.sh
+```
+
+脚本会以 Release 配置构建未签名的 ARM64 **真机**应用，生成 `build/Sideloadly/HSBC-SG.ipa` 和同目录下的 SHA-256 校验文件。打包无需开发者证书，安装时由 Sideloadly 签名。构建产物不进入 Git；需要自定义输出目录时，可将目录作为第一个参数传入。
 
 ## 界面预览
 
@@ -96,4 +112,3 @@ xcodebuild -project WealthHub.xcodeproj -scheme WealthHub \
 - `CompareView.swift`：账户对比与设置。
 - `Theme.swift`：配色、公共组件及图表。
 - `project.yml`：XcodeGen 工程源配置；`Package.swift`：独立核心测试入口。
-
