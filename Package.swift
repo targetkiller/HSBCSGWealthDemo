@@ -7,7 +7,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [.library(name: "WealthHubCore", targets: ["WealthHub"])],
     targets: [
-        .target(name: "WealthHub", path: "WealthHub", exclude: ["Assets.xcassets", "AccountsView.swift", "AddAccountFlow.swift", "AddPortfolioSheet.swift", "BankingNavigation.swift", "CompareView.swift", "InvestmentViews.swift", "GIVPortfolioData.swift", "GIVPerformanceView.swift", "GIVAnalysisView.swift", "StatementExtractionService.swift", "Theme.swift", "WealthHubApp.swift", "WealthView.swift", "WealthSupportingViews.swift"], sources: ["Models.swift", "PortfolioStore.swift", "StatementParser.swift"]),
+        .target(name: "WealthHub", path: "WealthHub", exclude: ["Assets.xcassets", "PrivacyInfo.xcprivacy", "AccountsView.swift", "AddAccountFlow.swift", "AddPortfolioSheet.swift", "BankingNavigation.swift", "CompareView.swift", "InvestmentViews.swift", "GIVPortfolioData.swift", "GIVPerformanceView.swift", "GIVAnalysisView.swift", "StatementExtractionService.swift", "Theme.swift", "WealthHubApp.swift", "WealthView.swift", "WealthSupportingViews.swift"], sources: ["Models.swift", "PortfolioStore.swift", "StatementParser.swift"]),
         .testTarget(name: "WealthHubTests", dependencies: ["WealthHub"], path: "WealthHubTests")
     ]
 )

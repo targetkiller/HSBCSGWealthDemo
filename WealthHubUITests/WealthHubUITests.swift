@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 final class WealthHubUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
@@ -72,6 +73,23 @@ final class WealthHubUITests: XCTestCase {
         let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: upload)
         XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 3), .completed)
         XCTAssertTrue(app.buttons["banking.tab.wealth"].isHittable)
+    }
+
+    func testSettingsShowsPrivacyPolicy() throws {
+        let app = launch()
+        defer { XCUIDevice.shared.orientation = .portrait }
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            XCUIDevice.shared.orientation = .landscapeLeft
+        }
+        app.buttons["banking.menu.button"].tap()
+        app.buttons["banking.menu.settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        let privacy = app.buttons["settings.privacy"]
+        scrollUntilHittable(privacy, in: app)
+        privacy.tap()
+        XCTAssertTrue(app.navigationBars["Privacy policy"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["This prototype uses local demo data and does not connect to a bank or provide banking services."].exists)
+        attachScreenshot(app, name: "Privacy policy")
     }
 
     func testAccountSelectionAndComparison() throws {
@@ -280,7 +298,8 @@ final class WealthHubUITests: XCTestCase {
     private func attachScreenshot(_ app: XCUIApplication, name: String) {
         // Let short SwiftUI transitions settle before recording a visual reference.
         Thread.sleep(forTimeInterval: 0.4)
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        // Full-screen capture avoids application-frame cropping after iPad rotation.
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = name
         screenshot.lifetime = .keepAlways
         add(screenshot)

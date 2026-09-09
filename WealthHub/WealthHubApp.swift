@@ -3,11 +3,13 @@ import SwiftUI
 @main
 struct WealthHubApp: App {
     @State private var store: PortfolioStore = {
+        #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--uitesting") {
             let defaults = UserDefaults(suiteName: "wealthhub.ui-tests")!
             defaults.removePersistentDomain(forName: "wealthhub.ui-tests")
             return PortfolioStore(defaults: defaults)
         }
+        #endif
         return PortfolioStore()
     }()
     var body: some Scene {

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C12A3268FE0C4D9090FA21A2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = C12A3268FE0C4D9090FA21A1 /* PrivacyInfo.xcprivacy */; };
 		049CF9F4404F914EC6B78184 /* GIVAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F32DC31B9CDE9874ABBDD4F /* GIVAnalysisView.swift */; };
 		14C8693E8EFD55E2F512C4E5 /* PortfolioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECCE9B13076F1F64E30A3848 /* PortfolioTests.swift */; };
 		159E925E0F8BDB8E75C8916C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E59018096453F5AE0A224C16 /* Assets.xcassets */; };
@@ -47,6 +48,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		C12A3268FE0C4D9090FA21A1 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		126635CD7525227CBACB7EC6 /* AccountsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsView.swift; sourceTree = "<group>"; };
 		2AC5CF41E5D1009920BA02AA /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		3790C1BB6ED33FE7802223CB /* WealthSupportingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WealthSupportingViews.swift; sourceTree = "<group>"; };
@@ -98,6 +100,7 @@
 				B6CD11FD7D8024265A5A4385 /* AddAccountFlow.swift */,
 				B6E0FAA0A4A3FE5FECC8A8C9 /* AddPortfolioSheet.swift */,
 				E59018096453F5AE0A224C16 /* Assets.xcassets */,
+				C12A3268FE0C4D9090FA21A1 /* PrivacyInfo.xcprivacy */,
 				DE9F66774E9B61F4FC7C74CC /* BankingNavigation.swift */,
 				6F217CD74A0750AE21660714 /* CompareView.swift */,
 				5F32DC31B9CDE9874ABBDD4F /* GIVAnalysisView.swift */,
@@ -230,6 +233,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				159E925E0F8BDB8E75C8916C /* Assets.xcassets in Resources */,
+				C12A3268FE0C4D9090FA21A2 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -314,19 +318,22 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "HSBC SG";
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo of a statement to review its holdings on this device.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Choose a statement image to review its holdings on this device.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wealthhub.demo;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -436,19 +443,22 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "HSBC SG";
+				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo of a statement to review its holdings on this device.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Choose a statement image to review its holdings on this device.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.wealthhub.demo;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";

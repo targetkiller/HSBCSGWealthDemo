@@ -10,6 +10,8 @@ A native SwiftUI and Swift Charts demo for portfolio analysis, account managemen
 
 The download is an unsigned device IPA for iOS 17 or later. You must sign it yourself before installing it on an iPhone.
 
+For distribution through Apple's TestFlight, follow the **[English submission guide](docs/TESTFLIGHT.md)** or **[中文提交指南](docs/TESTFLIGHT.zh-CN.md)**. They cover account setup, archiving, uploading, and inviting testers.
+
 The installed app is named **HSBC SG** and uses the supplied HSBC SG icon. The Xcode project and scheme are named `WealthHub`.
 
 Based on the [Figma Wealth Hub design](https://www.figma.com/design/asmxuHgmIG5e4NMJHstoZh/Untitled?node-id=0-1). The app uses the design's Home / Pay / Cards / Wealth navigation at the top and opens on Wealth. The main focus is portfolio analysis, adding holdings, account selection, allocation, risk and stress scenarios, product previews, and the assistant bar. Home, Pay, Cards, and product journeys are lightweight previews.
@@ -79,9 +81,11 @@ xcodebuild -project WealthHub.xcodeproj -scheme WealthHub \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
-Verification on **2026-09-09**, using an **iPhone 17 Pro / iOS 26.1 simulator**: all **9 core tests and 7 UI tests passed**. UI tests use isolated UserDefaults data and do not change the normal demo accounts. Coverage includes tapping Confirm near both corners, preserving its disabled state, tapping Proceed and Cancel away from their titles, adding and editing holdings, duplicate prevention, account selection and comparison, navigation, and Global Investment View. The Confirm corner-tap regression was reproduced before the fix and passes with the updated button.
+Verification on **2026-09-09**, using an **iPhone 17 Pro / iOS 26.1 simulator**: all **9 core tests and 8 UI tests passed**. UI tests use isolated UserDefaults data and do not change the normal demo accounts. Coverage includes tapping Confirm near both corners, preserving its disabled state, tapping Proceed and Cancel away from their titles, adding and editing holdings, duplicate prevention, account selection and comparison, navigation, Global Investment View, and the in-app privacy policy. The Confirm corner-tap regression was reproduced before the fix and passes with the updated button.
 
-Local verification results are stored in `build/GIVRevision.xcresult`, `build/GIVVerified.xcresult`, and the final GIV run, `build/GIVFinal.xcresult`. These generated result bundles are excluded from the repository. Committed previews are in [`Screenshots/`](Screenshots/), including `wealth.png`, `add-portfolio.png`, `accounts-sg.png`, `accounts-hk.png`, and `giv-*.png`.
+The latest iPhone result bundle is `build/TestFlight/iPhone.xcresult`. Earlier GIV verification results remain in `build/GIVRevision.xcresult`, `build/GIVVerified.xcresult`, and `build/GIVFinal.xcresult`. These generated result bundles are excluded from the repository. Committed previews are in [`Screenshots/`](Screenshots/), including `wealth.png`, `add-portfolio.png`, `accounts-sg.png`, `accounts-hk.png`, and `giv-*.png`.
+
+TestFlight preparation also passed an unsigned Release device-archive check for **1.0.1 (2)** using Xcode 26.2 / iOS SDK 26.2. The archive contains the privacy manifest, export-compliance declaration, and four iPad orientations. The privacy-policy flow also passed on an iPad Pro 11-inch (M5) / iOS 26.1 simulator in landscape; its result is `build/TestFlight/iPadVerified.xcresult`. Signing, App Store Connect upload validation, and Beta App Review still require the publishing team's account and Apple's services.
 
 ## Project structure
 

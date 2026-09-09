@@ -10,6 +10,8 @@
 
 下载文件为未签名的真机 IPA，支持 iOS 17 及以上版本，需自行签名后安装到 iPhone。
 
+通过 Apple TestFlight 分发请参阅 **[中文提交指南](docs/TESTFLIGHT.zh-CN.md)** 或 **[English submission guide](docs/TESTFLIGHT.md)**，包含账号配置、归档上传及邀请测试员的步骤。
+
 安装后的 App 名称为 **HSBC SG**，图标使用用户提供的 HSBC SG 图片。工程与 scheme 仍为 `WealthHub`。
 
 设计依据：[Figma Wealth Hub](https://www.figma.com/design/asmxuHgmIG5e4NMJHstoZh/Untitled?node-id=0-1)。主界面使用原稿的 Home／Pay／Cards／Wealth 顶部导航，默认进入 Wealth，移除原有自定义底部 Tab Bar。重点展示 Wealth 分析卡片、添加其他持仓、账户选择、配置分析、风险／压力测试、产品服务与底部助手栏。Pay／Cards／Home 和产品业务仅保留简洁预览。
@@ -79,9 +81,11 @@ xcodebuild -project WealthHub.xcodeproj -scheme WealthHub \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
-2026-09-09 在 iPhone 17 Pro / iOS 26.1 模拟器执行验证，**9 项核心测试与 7 项 UI 测试全部通过**。UI 测试使用独立的 UserDefaults 数据，不修改普通运行时的演示账户。覆盖 Confirm 左右边角点击与禁用状态、Proceed 和 Cancel 的文字外区域点击、持仓添加与编辑、去重、账户选择与对比、顶部导航及 Global Investment View。Confirm 的边角点击问题已在修复前复现，修复后验证通过。
+2026-09-09 在 iPhone 17 Pro / iOS 26.1 模拟器执行验证，**9 项核心测试与 8 项 UI 测试全部通过**。UI 测试使用独立的 UserDefaults 数据，不修改普通运行时的演示账户。覆盖 Confirm 左右边角点击与禁用状态、Proceed 和 Cancel 的文字外区域点击、持仓添加与编辑、去重、账户选择与对比、顶部导航、Global Investment View 及 App 内隐私政策。Confirm 的边角点击问题已在修复前复现，修复后验证通过。
 
-本轮结果位于 `build/GIVRevision.xcresult`、定向验证 `build/GIVVerified.xcresult` 和最终 GIV 验证 `build/GIVFinal.xcresult`。上述 `build/*.xcresult` 为本地验证产物，不提交到仓库。新版界面截图位于 `Screenshots/`，包括 `wealth.png`、`add-portfolio.png`、`accounts-sg.png`、`accounts-hk.png` 和 `giv-*.png`。
+本轮 iPhone 测试结果位于 `build/TestFlight/iPhone.xcresult`；此前的 GIV 验证结果保留在 `build/GIVRevision.xcresult`、`build/GIVVerified.xcresult` 和 `build/GIVFinal.xcresult`。这些结果包为本地验证产物，不提交到仓库。新版界面截图位于 `Screenshots/`，包括 `wealth.png`、`add-portfolio.png`、`accounts-sg.png`、`accounts-hk.png` 和 `giv-*.png`。
+
+TestFlight 准备已通过 Xcode 26.2 / iOS SDK 26.2 的 **1.0.1 (2)** 未签名 Release 真机归档检查，确认隐私清单、加密声明和 iPad 四个方向已包含在产物中。隐私政策流程也已在 iPad Pro 11-inch (M5) / iOS 26.1 模拟器横屏验证通过，结果位于 `build/TestFlight/iPadVerified.xcresult`。签名、App Store Connect 上传校验及 Beta 审核仍需使用发布团队账号及 Apple 服务完成。
 
 ## 结构
 

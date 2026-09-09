@@ -70,13 +70,52 @@ struct CompareView: View {
 struct SettingsView: View {
     @Environment(PortfolioStore.self) private var store
     @State private var resetConfirm = false
+    private var appVersion: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+        return "\(version) (\(build))"
+    }
     var body: some View {
         @Bindable var store = store
         Form {
             Section("Display") { Picker("Reporting currency", selection: $store.currency) { ForEach(Currency.allCases) { Text($0.rawValue).tag($0) } }; Toggle("Hide balances", isOn: $store.hideAmounts) }
-            Section("About this demo") { LabeledContent("Version", value: "1.0"); LabeledContent("Accounts", value: String(store.accounts.count)); LabeledContent("Holdings", value: String(store.holdingCount)); Text("Built from the Wealth Hub Figma concepts. All bank connections and analysis are illustrative. Account changes are saved locally.").font(.footnote).foregroundStyle(Theme.muted) }
+            Section("About this demo") { LabeledContent("Version", value: appVersion).accessibilityIdentifier("settings.version"); LabeledContent("Accounts", value: String(store.accounts.count)); LabeledContent("Holdings", value: String(store.holdingCount)); Text("Built from the Wealth Hub Figma concepts. All bank connections and analysis are illustrative. Account changes are saved locally.").font(.footnote).foregroundStyle(Theme.muted) }
+            Section {
+                NavigationLink("Privacy policy") { DemoPrivacyPolicyView() }
+                    .accessibilityIdentifier("settings.privacy")
+            }
             Section("Fixed demo exchange rates") { ForEach(Currency.allCases) { currency in LabeledContent("1 \(currency.rawValue)", value: String(format: "%.4f SGD", currency.convert(1, to: .SGD))) } }
             Section { Button("Restore demo data", role: .destructive) { resetConfirm = true } } footer: { Text("Replaces local accounts and holdings with the original sample portfolios.") }
         }.navigationTitle("Settings").navigationBarTitleDisplayMode(.inline).confirmationDialog("Restore all demo data?", isPresented: $resetConfirm, titleVisibility: .visible) { Button("Restore demo data", role: .destructive) { store.reset() } }
+    }
+}
+
+private struct DemoPrivacyPolicyView: View {
+    var body: some View {
+        List {
+            Section {
+                Text("This prototype uses local demo data and does not connect to a bank or provide banking services.")
+                Text("Effective date: 9 September 2026").font(.caption).foregroundStyle(Theme.muted)
+            }
+            Section("Data on your device") {
+                Text("Portfolio names, accounts, holdings, and preferences are stored on your device. There is no app account or bank sign-in. The app does not send portfolios or usage data to the project maintainers and has no advertising, analytics, or tracking SDKs.")
+            }
+            Section("Statements, photos, and analysis") {
+                Text("Selected CSV files, PDFs, and images are processed on your device. Text recognition uses Apple's on-device frameworks. Extracted holdings are saved when you confirm them. Camera or photo access is requested for the import action you choose. Statements and photos are not uploaded to a server.")
+                Text("Portfolio calculations and generated demo analysis run locally, without a remote AI service.")
+            }
+            Section("Retention and deletion") {
+                Text("Saved portfolios remain until you remove them, restore the original demo data in Settings, or uninstall the app. Camera and photo permissions can be changed in iOS Settings.")
+            }
+            Section("External services") {
+                Text("Apple distributes TestFlight builds and may collect beta feedback or diagnostics under its own terms. The project's GitHub support page follows GitHub's privacy policy. These services are separate from the demo's local portfolio storage.")
+            }
+            Section("Contact") {
+                Link("Project support", destination: URL(string: "https://github.com/targetkiller/HSBCSGWealthDemo/issues")!)
+            }
+        }
+        .navigationTitle("Privacy policy")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("privacy.policy")
     }
 }
