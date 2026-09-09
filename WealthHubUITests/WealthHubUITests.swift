@@ -28,6 +28,52 @@ final class WealthHubUITests: XCTestCase {
         XCTAssertEqual(app.tabBars.count, 0)
     }
 
+    func testConfirmRespondsAtEdgesAndRespectsDisabledState() throws {
+        let app = launch()
+        let title = app.staticTexts["accountSelector.title"]
+
+        // Tap empty background near opposite corners, away from the centered title.
+        for offset in [CGVector(dx: 0.04, dy: 0.18), CGVector(dx: 0.96, dy: 0.82)] {
+            app.buttons["accountSelector"].tap()
+            XCTAssertTrue(title.waitForExistence(timeout: 3))
+            let confirm = app.buttons["Confirm"]
+            XCTAssertTrue(confirm.isEnabled)
+            confirm.coordinate(withNormalizedOffset: offset).tap()
+            let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: title)
+            XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 3), .completed)
+        }
+
+        app.buttons["accountSelector"].tap()
+        XCTAssertTrue(title.waitForExistence(timeout: 3))
+        let global = app.buttons["accountSelector.global"]
+        if global.value as? String != "Selected" { global.tap() }
+        global.tap()
+        let confirm = app.buttons["Confirm"]
+        XCTAssertFalse(confirm.isEnabled)
+        confirm.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.5)).tap()
+        XCTAssertTrue(title.exists, "An empty selection must keep Confirm disabled across its full width.")
+
+        global.tap()
+        XCTAssertTrue(confirm.isEnabled)
+        confirm.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: title)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 3), .completed)
+    }
+
+    func testOutlinedCancelRespondsOutsideItsTitle() throws {
+        let app = launch()
+        openAddPortfolio(in: app)
+        app.buttons["portfolio.add.statement"].tap()
+        let upload = app.navigationBars["Upload or scan a statement"]
+        XCTAssertTrue(upload.waitForExistence(timeout: 3))
+        let cancel = app.buttons["portfolio.statement.cancel"]
+        scrollUntilHittable(cancel, in: app)
+        cancel.coordinate(withNormalizedOffset: CGVector(dx: 0.06, dy: 0.2)).tap()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: upload)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 3), .completed)
+        XCTAssertTrue(app.buttons["banking.tab.wealth"].isHittable)
+    }
+
     func testAccountSelectionAndComparison() throws {
         let app = launch()
         app.buttons["accountSelector"].tap()
@@ -88,7 +134,7 @@ final class WealthHubUITests: XCTestCase {
         let proceed = app.buttons["portfolio.extracted.proceed"]
         scrollUntilHittable(proceed, in: app)
         XCTAssertTrue(proceed.isEnabled)
-        proceed.tap()
+        proceed.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.5)).tap()
 
         XCTAssertTrue(app.buttons["banking.tab.wealth"].waitForExistence(timeout: 5))
         let updated = app.descendants(matching: .any)["portfolio.analysis.updated"].firstMatch
@@ -209,7 +255,7 @@ final class WealthHubUITests: XCTestCase {
         let confirm = app.buttons["portfolio.hsbc.confirm"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
         XCTAssertTrue(confirm.isEnabled)
-        confirm.tap()
+        confirm.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
         XCTAssertTrue(app.buttons["banking.tab.wealth"].waitForExistence(timeout: 5))
         let updated = app.descendants(matching: .any)["portfolio.analysis.updated"].firstMatch
         XCTAssertTrue(updated.waitForExistence(timeout: 8))

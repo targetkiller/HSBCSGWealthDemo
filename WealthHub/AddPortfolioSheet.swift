@@ -246,7 +246,7 @@ private struct OtherBankPortfolioConnection: View {
                                 Image(systemName: bank == option ? "largecircle.fill.circle" : "circle")
                                     .font(.system(size: 23, weight: .light))
                                     .foregroundStyle(bank == option ? Theme.red : Theme.muted)
-                            }.padding(18).background(Theme.background)
+                            }.padding(18).background(Theme.background).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("portfolio.bank.\(option)")
@@ -599,6 +599,7 @@ private struct PortfolioOutlinedButton: View {
                 .foregroundStyle(Theme.ink)
                 .background(.white)
                 .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1))
+                .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
 }

@@ -31,7 +31,7 @@ struct WealthProductsSection: View {
             HStack {
                 Text("Products and services").font(.system(size: 20, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
                 Spacer(minLength: 8)
-                Button { onSelect("Products and services") } label: { HStack(spacing: 6) { Text("View all").font(.system(size: 12, weight: .medium)); Image(systemName: "arrow.right") } }.buttonStyle(.plain)
+                Button { onSelect("Products and services") } label: { HStack(spacing: 6) { Text("View all").font(.system(size: 12, weight: .medium)); Image(systemName: "arrow.right") }.contentShape(Rectangle()) }.buttonStyle(.plain)
             }
             HStack(spacing: 8) { Pill(title: "Products", selected: category == "Products") { category = "Products" }; Pill(title: "Services", selected: category == "Services") { category = "Services" } }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), alignment: .center, spacing: 24) {
@@ -40,7 +40,7 @@ struct WealthProductsSection: View {
                         VStack(spacing: 9) {
                             Image(systemName: item.1).font(.system(size: 25, weight: .light)).foregroundStyle(Theme.red).frame(width: 58, height: 58).background(.white, in: Circle())
                             Text(item.0).font(.system(size: 12, weight: .medium)).lineSpacing(3).multilineTextAlignment(.center).frame(height: 34, alignment: .top)
-                        }.frame(maxWidth: .infinity)
+                        }.frame(maxWidth: .infinity).contentShape(Rectangle())
                     }.buttonStyle(.plain)
                 }
             }
@@ -52,15 +52,15 @@ struct WealthHelpBar: View {
     var open: () -> Void
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: open) { Image(systemName: "bubble.left.and.text.bubble.right").font(.system(size: 24, weight: .light)).frame(width: 24) }.accessibilityLabel("Open wealth assistant")
+            Button(action: open) { Image(systemName: "bubble.left.and.text.bubble.right").font(.system(size: 24, weight: .light)).frame(width: 24).contentShape(Rectangle()) }.accessibilityLabel("Open wealth assistant")
             Button(action: open) {
                 HStack(spacing: 7) {
                     Text("How can we help you today?").font(.system(size: 13)).foregroundStyle(Theme.muted).lineLimit(1).minimumScaleFactor(0.7)
                     Spacer(minLength: 0)
                     Image(systemName: "mic").font(.system(size: 20, weight: .light))
-                }.padding(.horizontal, 12).frame(height: 44).overlay(Rectangle().stroke(Theme.muted, lineWidth: 1))
+                }.padding(.horizontal, 12).frame(height: 44).overlay(Rectangle().stroke(Theme.muted, lineWidth: 1)).contentShape(Rectangle())
             }.accessibilityIdentifier("wealth.assistant.open")
-            Button(action: open) { Image(systemName: "arrow.right").font(.system(size: 25, weight: .light)).frame(width: 28) }.accessibilityLabel("Ask the wealth assistant")
+            Button(action: open) { Image(systemName: "arrow.right").font(.system(size: 25, weight: .light)).frame(width: 28).contentShape(Rectangle()) }.accessibilityLabel("Ask the wealth assistant")
         }.buttonStyle(.plain).foregroundStyle(Theme.ink).padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10).background(.white.shadow(.drop(color: .black.opacity(0.08), radius: 12, y: -3)))
     }
 }
@@ -96,7 +96,7 @@ struct WealthAssistantSheet: View {
                     VStack(alignment: .leading, spacing: 20) {
                         Text("How can we help you today?").font(.system(size: 25, weight: .light))
                         Text("Explore your selected portfolio. Demo answers are based on the holdings on this device.").font(.system(size: 13)).foregroundStyle(Theme.muted).lineSpacing(4)
-                        ForEach(["Summarise my portfolio", "What is my largest allocation?", "How can I add other holdings?"], id: \.self) { item in Button { answer(item) } label: { HStack { Text(item).font(.system(size: 14)); Spacer(); Image(systemName: "arrow.right") }.padding(14).background(Theme.background) }.buttonStyle(.plain) }
+                        ForEach(["Summarise my portfolio", "What is my largest allocation?", "How can I add other holdings?"], id: \.self) { item in Button { answer(item) } label: { HStack { Text(item).font(.system(size: 14)); Spacer(); Image(systemName: "arrow.right") }.padding(14).background(Theme.background).contentShape(Rectangle()) }.buttonStyle(.plain) }
                         ForEach(Array(messages.enumerated()), id: \.offset) { _, item in VStack(alignment: .leading, spacing: 12) { Text(item.question).font(.system(size: 14, weight: .medium)); Text(item.answer).font(.system(size: 14)).foregroundStyle(Theme.muted).lineSpacing(5) }.padding(16).background(Theme.background) }
                     }.padding(20)
                 }

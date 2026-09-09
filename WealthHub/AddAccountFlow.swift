@@ -14,7 +14,7 @@ struct AddAccountFlow: View {
             VStack(alignment: .leading, spacing: 24) {
                 if step == 2 {
                     VStack(spacing: 18) { Image(systemName: "checkmark.circle").font(.system(size: 64, weight: .light)).foregroundStyle(Theme.green); Text("Your account is ready").font(.system(size: 25, weight: .medium)); Text("Your demo portfolio has been added to Wealth Hub.").font(.subheadline).foregroundStyle(Theme.muted).multilineTextAlignment(.center) }.frame(maxWidth: .infinity).padding(.vertical, 45)
-                    if let addedID { NavigationLink { AccountDetailView(accountID: addedID) } label: { Text("View account").frame(maxWidth: .infinity).padding(17).foregroundStyle(.white).background(Theme.red) }.buttonStyle(.plain) }
+                    if let addedID { NavigationLink { AccountDetailView(accountID: addedID) } label: { Text("View account").frame(maxWidth: .infinity).padding(17).foregroundStyle(.white).background(Theme.red).contentShape(Rectangle()) }.buttonStyle(.plain) }
                 } else if step == 1 {
                     Image(systemName: "link.circle").font(.system(size: 48, weight: .light)).foregroundStyle(Theme.red)
                     Text("Connect to \(bank)").font(.system(size: 27, weight: .medium))
@@ -26,19 +26,22 @@ struct AddAccountFlow: View {
                 } else {
                     Text("Add your other accounts").font(.system(size: 27, weight: .medium))
                     Text("See your full financial picture, across banks and markets.").font(.subheadline).foregroundStyle(Theme.muted)
-                    NavigationLink { StatementImportView() } label: { HStack { Image(systemName: "doc.badge.arrow.up").font(.title2).foregroundStyle(Theme.red); VStack(alignment: .leading, spacing: 6) { Text("Upload statement").font(.system(size: 16, weight: .medium)); Text("Import holdings from a CSV file").font(.system(size: 12)).foregroundStyle(Theme.muted) }; Spacer(); Image(systemName: "chevron.right") }.padding(18).background(Theme.background) }.buttonStyle(.plain)
+                    NavigationLink { StatementImportView() } label: { HStack { Image(systemName: "doc.badge.arrow.up").font(.title2).foregroundStyle(Theme.red); VStack(alignment: .leading, spacing: 6) { Text("Upload statement").font(.system(size: 16, weight: .medium)); Text("Import holdings from a CSV file").font(.system(size: 12)).foregroundStyle(Theme.muted) }; Spacer(); Image(systemName: "chevron.right") }.padding(18).background(Theme.background).contentShape(Rectangle()) }.buttonStyle(.plain)
                     Text("Connect to another bank").font(.system(size: 18, weight: .medium))
                     HStack { ForEach(["Singapore", "Hong Kong"], id: \.self) { item in Pill(title: item, selected: market == item) { market = item } } }
                     ForEach(["DBS", "HSBC", "OCBC", "UOB", "Standard Chartered"], id: \.self) { item in
-                        Button { bank = item } label: { HStack { BankMark(bank: item); Text(item).font(.system(size: 15)); Spacer(); Image(systemName: bank == item ? "largecircle.fill.circle" : "circle").font(.system(size: 23)) }.padding(.vertical, 12) }.buttonStyle(.plain)
+                        Button { bank = item } label: { HStack { BankMark(bank: item); Text(item).font(.system(size: 15)); Spacer(); Image(systemName: bank == item ? "largecircle.fill.circle" : "circle").font(.system(size: 23)) }.padding(.vertical, 12).contentShape(Rectangle()) }.buttonStyle(.plain)
                         Divider()
                     }
                     TextField("Account nickname (optional)", text: $name).textFieldStyle(.roundedBorder)
                     PrimaryButton(title: "Continue") { step = 1 }
-                    Button("Create an empty account manually") {
+                    Button {
                         let account = InvestmentAccount(name: name.isEmpty ? "My investment account" : name, institution: bank, currency: market == "Singapore" ? .SGD : .HKD, colorIndex: store.accounts.count, market: market)
                         store.save(account); addedID = account.id; step = 2
-                    }.font(.system(size: 13)).frame(maxWidth: .infinity)
+                    } label: {
+                        Text("Create an empty account manually").font(.system(size: 13))
+                            .frame(maxWidth: .infinity).contentShape(Rectangle())
+                    }
                 }
                 DemoFootnote()
             }.padding(20)
@@ -68,10 +71,12 @@ struct StatementImportView: View {
                 Text("Import a CSV statement to add another portfolio. Files are processed on this device.").font(.subheadline).foregroundStyle(Theme.muted)
                 if let importedID {
                     Image(systemName: "checkmark.circle").font(.system(size: 58)).foregroundStyle(Theme.green).frame(maxWidth: .infinity).padding(30)
-                    NavigationLink { AccountDetailView(accountID: importedID) } label: { Label("View imported account", systemImage: "arrow.right").frame(maxWidth: .infinity).padding(16).foregroundStyle(.white).background(Theme.red) }.buttonStyle(.plain)
+                    NavigationLink { AccountDetailView(accountID: importedID) } label: { Label("View imported account", systemImage: "arrow.right").frame(maxWidth: .infinity).padding(16).foregroundStyle(.white).background(Theme.red).contentShape(Rectangle()) }.buttonStyle(.plain)
                 } else {
-                    Button { picking = true } label: { VStack(spacing: 14) { Image(systemName: "doc.badge.arrow.up").font(.system(size: 38, weight: .light)); Text("Select a CSV statement").font(.system(size: 16, weight: .medium)); Text("CSV · Up to 1 MB / 1,000 holdings").font(.caption).foregroundStyle(Theme.muted) }.frame(maxWidth: .infinity).padding(.vertical, 36).background(Theme.background).overlay(Rectangle().stroke(Theme.line, style: StrokeStyle(lineWidth: 1, dash: [6]))) }.buttonStyle(.plain)
-                    Button("Try a sample statement") { do { holdings = try StatementParser.parse(StatementParser.template); filename = "Sample statement.csv"; error = nil } catch { self.error = error.localizedDescription } }.font(.subheadline).frame(maxWidth: .infinity)
+                    Button { picking = true } label: { VStack(spacing: 14) { Image(systemName: "doc.badge.arrow.up").font(.system(size: 38, weight: .light)); Text("Select a CSV statement").font(.system(size: 16, weight: .medium)); Text("CSV · Up to 1 MB / 1,000 holdings").font(.caption).foregroundStyle(Theme.muted) }.frame(maxWidth: .infinity).padding(.vertical, 36).background(Theme.background).overlay(Rectangle().stroke(Theme.line, style: StrokeStyle(lineWidth: 1, dash: [6]))).contentShape(Rectangle()) }.buttonStyle(.plain)
+                    Button { do { holdings = try StatementParser.parse(StatementParser.template); filename = "Sample statement.csv"; error = nil } catch { self.error = error.localizedDescription } } label: {
+                        Text("Try a sample statement").font(.subheadline).frame(maxWidth: .infinity).contentShape(Rectangle())
+                    }
                     DisclosureGroup("CSV format and supported values") { Text("Columns: name, symbol, category, currency, quantity, price, averageCost\n\nCategories: \(AssetClass.allCases.map(\.rawValue).joined(separator: ", "))\nCurrencies: SGD, USD, HKD, CNY\n\nUse plain comma-separated values without quoted commas. PDF/OCR import is not included in this demo.").font(.caption).foregroundStyle(Theme.muted).padding(.top, 10) }
                     if let error { Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(Theme.red) }
                     if !holdings.isEmpty {

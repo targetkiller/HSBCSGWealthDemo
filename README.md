@@ -4,11 +4,11 @@
 
 A native SwiftUI and Swift Charts demo for portfolio analysis, account management, and comparison across accounts. Requires iOS 17 or later and has no third-party runtime dependencies.
 
-## Download and install on iPhone
+## Download the iPhone app
 
-**[Download HSBC-SG.ipa](https://github.com/targetkiller/HSBCSGWealthDemo/releases/latest/download/HSBC-SG.ipa)** · **[Sideloadly installation guide](docs/SIDELOADLY.md)** · [中文安装指南](docs/SIDELOADLY.zh-CN.md)
+**[Download HSBC-SG.ipa](https://github.com/targetkiller/HSBCSGWealthDemo/releases/latest/download/HSBC-SG.ipa)** · **[All releases](https://github.com/targetkiller/HSBCSGWealthDemo/releases)**
 
-Install the device build with Sideloadly on a Mac or Windows computer and your own free Apple Account. No paid Apple Developer membership is required. Free signing lasts 7 days and can be renewed; opening the download link on an iPhone alone does not install the app. See the guide for setup and automatic refresh.
+The download is an unsigned device IPA for iOS 17 or later. You must sign it yourself before installing it on an iPhone.
 
 The installed app is named **HSBC SG** and uses the supplied HSBC SG icon. The Xcode project and scheme are named `WealthHub`.
 
@@ -27,16 +27,6 @@ bash scripts/run-demo.sh
 ```
 
 The script uses a booted iPhone simulator, or the first available iPhone if none is running. You can pass a simulator UDID as an argument. Xcode, an iOS simulator runtime, and Python 3 are required. If XcodeGen is installed, the script regenerates the project; otherwise, it uses the committed `.xcodeproj`.
-
-## Build the Sideloadly IPA
-
-On a Mac with Xcode and its iOS SDK installed, run:
-
-```bash
-./scripts/build-sideloadly.sh
-```
-
-This builds an unsigned ARM64 **device** app in Release mode and packages `build/Sideloadly/HSBC-SG.ipa` with a SHA-256 checksum file alongside it. No developer certificate is needed to build this package; Sideloadly signs it during installation. Build output stays outside Git. Pass an output directory as the first argument if needed.
 
 ## Screenshots
 
@@ -89,7 +79,7 @@ xcodebuild -project WealthHub.xcodeproj -scheme WealthHub \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
-Verification on **2026-09-09**, using an **iPhone 17 Pro / iOS 26.3.1 simulator**: all **9 core tests and 5 UI tests passed**, including targeted reruns after fixes. UI tests use isolated UserDefaults data and do not change the normal demo accounts. Coverage includes adding, cancelling, editing, duplicate prevention, linked banks, selecting all accounts, SGD suffixes, asset and region switching, monthly and yearly return changes, benchmark overlays, all three Exposure views, and stress scenarios.
+Verification on **2026-09-09**, using an **iPhone 17 Pro / iOS 26.1 simulator**: all **9 core tests and 7 UI tests passed**. UI tests use isolated UserDefaults data and do not change the normal demo accounts. Coverage includes tapping Confirm near both corners, preserving its disabled state, tapping Proceed and Cancel away from their titles, adding and editing holdings, duplicate prevention, account selection and comparison, navigation, and Global Investment View. The Confirm corner-tap regression was reproduced before the fix and passes with the updated button.
 
 Local verification results are stored in `build/GIVRevision.xcresult`, `build/GIVVerified.xcresult`, and the final GIV run, `build/GIVFinal.xcresult`. These generated result bundles are excluded from the repository. Committed previews are in [`Screenshots/`](Screenshots/), including `wealth.png`, `add-portfolio.png`, `accounts-sg.png`, `accounts-hk.png`, and `giv-*.png`.
 

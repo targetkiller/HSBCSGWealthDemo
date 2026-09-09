@@ -103,7 +103,7 @@ struct WealthView: View {
                     BankLogoStack(banks: accounts.map(\.institution), size: 20)
                     Text(selectionTitle).font(.system(size: 13)).lineLimit(1)
                     Image(systemName: "chevron.down").font(.system(size: 15, weight: .light))
-                }.padding(.horizontal, 12).padding(.vertical, 10).background(.white.opacity(0.8), in: Capsule()).overlay(Capsule().stroke(Color(hex: 0xD7D8D6)))
+                }.padding(.horizontal, 12).padding(.vertical, 10).background(.white.opacity(0.8), in: Capsule()).overlay(Capsule().stroke(Color(hex: 0xD7D8D6))).contentShape(Capsule())
             }.buttonStyle(.plain).accessibilityIdentifier("accountSelector")
             Label("Total market value", systemImage: "questionmark.circle").labelStyle(WealthTrailingIconLabelStyle()).font(.system(size: 14))
             HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -123,7 +123,7 @@ struct WealthView: View {
             HStack {
                 Label("Realised gain/loss", systemImage: "questionmark.circle").labelStyle(WealthTrailingIconLabelStyle()).font(.system(size: 12))
                 Spacer()
-                NavigationLink { InvestmentView(selectedIDs: Set(accounts.map(\.id))) } label: { HStack(spacing: 8) { Text("View details").font(.system(size: 13, weight: .semibold)); Image(systemName: "arrow.right").font(.system(size: 18, weight: .light)) } }.buttonStyle(.plain).disabled(accounts.isEmpty).accessibilityIdentifier("wealth.viewDetails")
+                NavigationLink { InvestmentView(selectedIDs: Set(accounts.map(\.id))) } label: { HStack(spacing: 8) { Text("View details").font(.system(size: 13, weight: .semibold)); Image(systemName: "arrow.right").font(.system(size: 18, weight: .light)) }.contentShape(Rectangle()) }.buttonStyle(.plain).disabled(accounts.isEmpty).accessibilityIdentifier("wealth.viewDetails")
             }
         }
     }
@@ -136,8 +136,8 @@ struct WealthView: View {
                 VStack(alignment: .leading, spacing: 4) { Text("Portfolio analysis").font(.system(size: 17, weight: .semibold)); if generated || generating { Text(generating ? "Analysing…" : "Just now").font(.system(size: 12)).foregroundStyle(Theme.muted) } }
                 Spacer()
                 if generated {
-                    Menu { Button("Regenerate analysis") { refreshAnalysis() }; Button("Add other holdings") { addPortfolioPresented = true } } label: { Image(systemName: "ellipsis").rotationEffect(.degrees(90)).frame(width: 24, height: 30) }.foregroundStyle(Theme.ink)
-                    Button { withAnimation { analysisExpanded.toggle() } } label: { Image(systemName: analysisExpanded ? "chevron.up" : "chevron.down").font(.system(size: 20, weight: .light)).frame(width: 28, height: 30) }.buttonStyle(.plain).accessibilityLabel("Toggle portfolio analysis")
+                    Menu { Button("Regenerate analysis") { refreshAnalysis() }; Button("Add other holdings") { addPortfolioPresented = true } } label: { Image(systemName: "ellipsis").rotationEffect(.degrees(90)).frame(width: 24, height: 30).contentShape(Rectangle()) }.foregroundStyle(Theme.ink)
+                    Button { withAnimation { analysisExpanded.toggle() } } label: { Image(systemName: analysisExpanded ? "chevron.up" : "chevron.down").font(.system(size: 20, weight: .light)).frame(width: 28, height: 30).contentShape(Rectangle()) }.buttonStyle(.plain).accessibilityLabel("Toggle portfolio analysis")
                 }
             }
             if generating {
@@ -217,10 +217,10 @@ struct WealthView: View {
         }
     }
     private func quickAction(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { VStack(spacing: 8) { Image(systemName: icon).font(.system(size: 24, weight: .light)).foregroundStyle(Theme.red).frame(width: 57, height: 57).background(Color(hex: 0xF3F3F3), in: Circle()); Text(title).font(.system(size: 12, weight: .medium)).lineSpacing(3).multilineTextAlignment(.center) }.frame(maxWidth: .infinity) }.buttonStyle(.plain)
+        Button(action: action) { VStack(spacing: 8) { Image(systemName: icon).font(.system(size: 24, weight: .light)).foregroundStyle(Theme.red).frame(width: 57, height: 57).background(Color(hex: 0xF3F3F3), in: Circle()); Text(title).font(.system(size: 12, weight: .medium)).lineSpacing(3).multilineTextAlignment(.center) }.frame(maxWidth: .infinity).contentShape(Rectangle()) }.buttonStyle(.plain)
     }
     private var overviewTabs: some View {
-        HStack(spacing: 0) { ForEach(["Overview", "Insights"], id: \.self) { item in Button { overview = item } label: { Text(item).font(.system(size: 17, weight: overview == item ? .medium : .regular)).frame(maxWidth: .infinity).padding(.vertical, 15).overlay(alignment: .bottom) { Rectangle().fill(overview == item ? Theme.red : Theme.line).frame(height: overview == item ? 2 : 1) } }.buttonStyle(.plain) } }
+        HStack(spacing: 0) { ForEach(["Overview", "Insights"], id: \.self) { item in Button { overview = item } label: { Text(item).font(.system(size: 17, weight: overview == item ? .medium : .regular)).frame(maxWidth: .infinity).padding(.vertical, 15).overlay(alignment: .bottom) { Rectangle().fill(overview == item ? Theme.red : Theme.line).frame(height: overview == item ? 2 : 1) }.contentShape(Rectangle()) }.buttonStyle(.plain) } }
     }
     private var holdingsSection: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -231,8 +231,8 @@ struct WealthView: View {
                 if analysis == "Allocation analysis" {
                     AllocationRing(slices: chartSlices, center: store.amount(total, compact: true))
                     HStack(spacing: 0) {
-                        Button { geography = false } label: { Image(systemName: "square.stack.3d.up").frame(width: 44, height: 32).background(geography ? .clear : .white, in: Capsule()) }.accessibilityLabel("Group by asset class")
-                        Button { geography = true } label: { Image(systemName: "globe").frame(width: 44, height: 32).background(geography ? .white : .clear, in: Capsule()) }.accessibilityLabel("Group by region")
+                        Button { geography = false } label: { Image(systemName: "square.stack.3d.up").frame(width: 44, height: 32).background(geography ? .clear : .white, in: Capsule()).contentShape(Capsule()) }.accessibilityLabel("Group by asset class")
+                        Button { geography = true } label: { Image(systemName: "globe").frame(width: 44, height: 32).background(geography ? .white : .clear, in: Capsule()).contentShape(Capsule()) }.accessibilityLabel("Group by region")
                     }.buttonStyle(.plain).font(.system(size: 14)).padding(3).background(Theme.background, in: Capsule())
                 } else { allocationBar }
                 if geography && analysis == "Allocation analysis" {
@@ -258,7 +258,7 @@ struct WealthView: View {
                     Spacer(minLength: 4)
                     HStack(spacing: 4) { if profit != 0 { Image(systemName: profit >= 0 ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill").font(.system(size: 8)) }; Text(store.amount(profit)).font(.system(size: 13, weight: .medium)).lineLimit(1).minimumScaleFactor(0.7) }.foregroundStyle(profit >= 0 ? Theme.green : Theme.red)
                     Image(systemName: expandedCategory == category ? "chevron.down" : "chevron.right").font(.system(size: 17, weight: .light))
-                }.padding(.vertical, 16)
+                }.padding(.vertical, 16).contentShape(Rectangle())
             }.buttonStyle(.plain)
             if expandedCategory == category {
                 ForEach(group) { item in HStack { VStack(alignment: .leading, spacing: 4) { Text(item.name).font(.system(size: 12)); Text("\(item.quantity.formatted()) shares · \(item.symbol)").font(.system(size: 10)).foregroundStyle(Theme.muted) }; Spacer(); Text(store.amount(item.currency.convert(item.value, to: store.currency))).font(.system(size: 12)) }.padding(.leading, 23).padding(.bottom, 16) }
@@ -276,7 +276,7 @@ struct WealthView: View {
     private var stressTest: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Stress Test Your Portfolio").font(.system(size: 18, weight: .medium))
-            HStack(spacing: 0) { ForEach(0..<3) { index in Button { scenario = index } label: { Text("Scenario \(index + 1)").font(.system(size: 12)).frame(maxWidth: .infinity).padding(.vertical, 10).overlay(alignment: .bottom) { Rectangle().fill(scenario == index ? Theme.red : Theme.line).frame(height: 1) } }.buttonStyle(.plain) } }
+            HStack(spacing: 0) { ForEach(0..<3) { index in Button { scenario = index } label: { Text("Scenario \(index + 1)").font(.system(size: 12)).frame(maxWidth: .infinity).padding(.vertical, 10).overlay(alignment: .bottom) { Rectangle().fill(scenario == index ? Theme.red : Theme.line).frame(height: 1) }.contentShape(Rectangle()) }.buttonStyle(.plain) } }
             Text(["Global equities fall by 10%.", "Bond prices fall by 5%.", "US dollar weakens by 10%."][scenario]).font(.system(size: 13))
             Text("Hypothetical decline in portfolio value").font(.system(size: 11)).foregroundStyle(Theme.muted)
             Chart {
@@ -299,7 +299,7 @@ struct WealthView: View {
     private var futurePlanner: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Future Planner").font(.system(size: 20, weight: .medium))
-            Button { productPreview = "Future Planner" } label: { HStack(spacing: 14) { Image(systemName: "list.bullet.clipboard").font(.system(size: 26, weight: .light)).foregroundStyle(Theme.red); VStack(alignment: .leading, spacing: 5) { Text("You set the goals").font(.system(size: 14, weight: .semibold)); Text("Make a plan for the life you want, with a clear view of your wealth.").font(.system(size: 12)).foregroundStyle(Theme.muted).multilineTextAlignment(.leading) }; Spacer(); Image(systemName: "arrow.right") } }.buttonStyle(.plain)
+            Button { productPreview = "Future Planner" } label: { HStack(spacing: 14) { Image(systemName: "list.bullet.clipboard").font(.system(size: 26, weight: .light)).foregroundStyle(Theme.red); VStack(alignment: .leading, spacing: 5) { Text("You set the goals").font(.system(size: 14, weight: .semibold)); Text("Make a plan for the life you want, with a clear view of your wealth.").font(.system(size: 12)).foregroundStyle(Theme.muted).multilineTextAlignment(.leading) }; Spacer(); Image(systemName: "arrow.right") }.contentShape(Rectangle()) }.buttonStyle(.plain)
         }.padding(.vertical, 8)
     }
 }

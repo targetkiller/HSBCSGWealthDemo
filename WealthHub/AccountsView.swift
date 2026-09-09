@@ -18,10 +18,12 @@ struct AccountSelector: View {
                 Text("Select accounts").font(.system(size: 22, weight: .regular))
                     .accessibilityIdentifier("accountSelector.title")
                 Spacer()
-                Button("Close", systemImage: "xmark") { dismiss() }
-                    .labelStyle(.iconOnly).font(.system(size: 22, weight: .light))
-                    .frame(width: 44, height: 44).contentShape(Rectangle())
-                    .accessibilityIdentifier("accountSelector.close")
+                Button { dismiss() } label: {
+                    Label("Close", systemImage: "xmark")
+                        .labelStyle(.iconOnly).font(.system(size: 22, weight: .light))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("accountSelector.close")
             }
             .padding(.leading, 24).padding(.trailing, 12).padding(.top, 14).padding(.bottom, 4)
 
@@ -43,6 +45,7 @@ struct AccountSelector: View {
                                     .foregroundStyle(market == item ? .white : Theme.ink)
                                     .background(market == item ? Theme.ink : .white, in: Capsule())
                                     .overlay(Capsule().stroke(market == item ? .clear : Theme.line))
+                                    .contentShape(Capsule())
                             }
                             .buttonStyle(.plain).accessibilityLabel(item)
                             .accessibilityAddTraits(market == item ? .isSelected : [])
@@ -143,11 +146,11 @@ struct AccountsView: View {
                             if let number = account.accountNumber { Text(number).font(.system(size: 12)).foregroundStyle(Theme.muted) }
                             HStack(alignment: .bottom) { VStack(alignment: .leading, spacing: 5) { Text("Market value · \(store.currency.rawValue)").font(.system(size: 11)).foregroundStyle(Theme.muted); Text(store.amount(account.value(in: store.currency))).font(.system(size: 23, weight: .semibold)).minimumScaleFactor(0.7) }; Spacer(); ReturnLabel(value: account.returnRate) }
                             HStack { Text("\(account.holdings.count) holdings"); Spacer(); Text("Demo account") }.font(.system(size: 11)).foregroundStyle(Theme.muted)
-                        }.padding(18).background(.white).overlay(Rectangle().stroke(Theme.line)).overlay(alignment: .top) { Rectangle().fill(Theme.accountColor(account.colorIndex)).frame(height: 3) }
+                        }.padding(18).background(.white).overlay(Rectangle().stroke(Theme.line)).overlay(alignment: .top) { Rectangle().fill(Theme.accountColor(account.colorIndex)).frame(height: 3) }.contentShape(Rectangle())
                     }.buttonStyle(.plain)
                 }
                 if filtered.isEmpty { EmptyPortfolio(title: store.accounts.isEmpty ? "No accounts yet" : "No matching accounts", message: "Add an account or change your filters.") }
-                NavigationLink { AddAccountFlow() } label: { Label("Add an account", systemImage: "plus").frame(maxWidth: .infinity).padding(17).foregroundStyle(.white).background(Theme.red) }.buttonStyle(.plain).accessibilityIdentifier("addAccount")
+                NavigationLink { AddAccountFlow() } label: { Label("Add an account", systemImage: "plus").frame(maxWidth: .infinity).padding(17).foregroundStyle(.white).background(Theme.red).contentShape(Rectangle()) }.buttonStyle(.plain).accessibilityIdentifier("addAccount")
                 DemoFootnote()
             }.padding(20)
         }.background(Theme.background.opacity(0.55)).navigationTitle("Your accounts").navigationBarTitleDisplayMode(.inline).searchable(text: $search, prompt: "Search accounts or banks")
@@ -178,7 +181,7 @@ struct AccountDetailView: View {
                         if account.holdings.isEmpty { EmptyPortfolio(title: "No holdings yet", message: "Add your first holding to build this portfolio.") }
                         ForEach(account.holdings) { item in
                             Button { holding = item } label: {
-                                HStack(spacing: 12) { Image(systemName: item.category.icon).font(.system(size: 17)).foregroundStyle(Theme.color(item.category)).frame(width: 38, height: 38).background(Theme.background); VStack(alignment: .leading, spacing: 5) { Text(item.name).font(.system(size: 14)); Text(item.symbol + " · " + item.category.rawValue).font(.system(size: 11)).foregroundStyle(Theme.muted) }; Spacer(); VStack(alignment: .trailing, spacing: 5) { Text(store.amount(item.currency.convert(item.value, to: store.currency))).font(.system(size: 13, weight: .medium)); ReturnLabel(value: item.returnRate) } }.padding(.vertical, 9)
+                                HStack(spacing: 12) { Image(systemName: item.category.icon).font(.system(size: 17)).foregroundStyle(Theme.color(item.category)).frame(width: 38, height: 38).background(Theme.background); VStack(alignment: .leading, spacing: 5) { Text(item.name).font(.system(size: 14)); Text(item.symbol + " · " + item.category.rawValue).font(.system(size: 11)).foregroundStyle(Theme.muted) }; Spacer(); VStack(alignment: .trailing, spacing: 5) { Text(store.amount(item.currency.convert(item.value, to: store.currency))).font(.system(size: 13, weight: .medium)); ReturnLabel(value: item.returnRate) } }.padding(.vertical, 9).contentShape(Rectangle())
                             }.buttonStyle(.plain)
                             Divider()
                         }

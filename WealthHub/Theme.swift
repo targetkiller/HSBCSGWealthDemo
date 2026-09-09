@@ -31,8 +31,17 @@ struct PrimaryButton: View {
     var title: String
     var action: () -> Void
     var body: some View {
-        Button(action: action) { Text(title).font(.system(size: 16, weight: .medium)).frame(maxWidth: .infinity).padding(.vertical, 16) }
-            .buttonStyle(.plain).foregroundStyle(.white).background(Theme.red).accessibilityIdentifier(title)
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 16, weight: .medium))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .foregroundStyle(.white)
+                .background(Theme.red)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(title)
     }
 }
 
@@ -43,7 +52,8 @@ struct Pill: View {
     var body: some View {
         Button(action: action) { Text(title).font(.system(size: 12, weight: .medium)).padding(.horizontal, 14).padding(.vertical, 10)
                 .foregroundStyle(selected ? .white : Theme.ink).background(selected ? Theme.ink : .white, in: Capsule())
-                .overlay(Capsule().stroke(selected ? .clear : Theme.line)) }
+                .overlay(Capsule().stroke(selected ? .clear : Theme.line))
+                .contentShape(Capsule()) }
         .buttonStyle(.plain)
     }
 }

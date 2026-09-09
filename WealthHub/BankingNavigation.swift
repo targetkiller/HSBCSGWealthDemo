@@ -20,6 +20,7 @@ struct BankingHeader: View {
                     .overlay(alignment: .bottom) {
                         if selection == .home { selectionIndicator.padding(.horizontal, 8) }
                     }
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Home")
             .accessibilityAddTraits(selection == .home ? .isSelected : [])
@@ -42,6 +43,7 @@ struct BankingHeader: View {
                             .overlay(alignment: .bottom) {
                                 if selection == section { selectionIndicator.padding(.horizontal, 2) }
                             }
+                            .contentShape(Rectangle())
                     }
                     .accessibilityAddTraits(selection == section ? .isSelected : [])
                     .accessibilityIdentifier("banking.tab.\(section.rawValue)")
@@ -54,6 +56,7 @@ struct BankingHeader: View {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 25, weight: .light))
                     .frame(width: 44, height: 48)
+                    .contentShape(Rectangle())
             }
             .accessibilityLabel("Menu")
             .accessibilityIdentifier("banking.menu.button")
@@ -153,6 +156,7 @@ struct BankingPlaceholderView: View {
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(Theme.ink)
                         .padding(.top, 6)
+                        .contentShape(Rectangle())
                     }
                     .accessibilityIdentifier("banking.preview.openWealth")
                 }

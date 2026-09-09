@@ -4,11 +4,11 @@
 
 原生 SwiftUI + Swift Charts 资产分析、多账户管理与账户对比 Demo。最低 iOS 17，无第三方运行时依赖。
 
-## 下载并安装到 iPhone
+## 下载 iPhone 安装包
 
-**[下载 HSBC-SG.ipa](https://github.com/targetkiller/HSBCSGWealthDemo/releases/latest/download/HSBC-SG.ipa)** · **[Sideloadly 中文安装指南](docs/SIDELOADLY.zh-CN.md)** · [English installation guide](docs/SIDELOADLY.md)
+**[下载 HSBC-SG.ipa](https://github.com/targetkiller/HSBCSGWealthDemo/releases/latest/download/HSBC-SG.ipa)** · **[所有发布版本](https://github.com/targetkiller/HSBCSGWealthDemo/releases)**
 
-使用 Mac 或 Windows 电脑上的 Sideloadly，以自己的免费 Apple Account 为真机安装包签名并安装，无需付费 Apple Developer 会员。免费签名有效期为 7 天，可以续签；只在 iPhone 上点击下载链接无法直接安装。配置和自动续签方法见安装指南。
+下载文件为未签名的真机 IPA，支持 iOS 17 及以上版本，需自行签名后安装到 iPhone。
 
 安装后的 App 名称为 **HSBC SG**，图标使用用户提供的 HSBC SG 图片。工程与 scheme 仍为 `WealthHub`。
 
@@ -27,16 +27,6 @@ bash scripts/run-demo.sh
 ```
 
 脚本选择已启动的 iPhone 模拟器（否则使用第一个可用 iPhone）；也可传入模拟器 UDID。需要已安装 Xcode、iOS 模拟器运行时及 Python 3。若有 XcodeGen，自动重新生成工程；否则使用已提交的 `.xcodeproj`。
-
-## 构建 Sideloadly 安装包
-
-在已安装 Xcode 和 iOS SDK 的 Mac 上运行：
-
-```bash
-./scripts/build-sideloadly.sh
-```
-
-脚本会以 Release 配置构建未签名的 ARM64 **真机**应用，生成 `build/Sideloadly/HSBC-SG.ipa` 和同目录下的 SHA-256 校验文件。打包无需开发者证书，安装时由 Sideloadly 签名。构建产物不进入 Git；需要自定义输出目录时，可将目录作为第一个参数传入。
 
 ## 界面预览
 
@@ -89,7 +79,7 @@ xcodebuild -project WealthHub.xcodeproj -scheme WealthHub \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
-2026-09-09 在 iPhone 17 Pro / iOS 26.3.1 模拟器执行验证，9 项核心测试与 5 项 UI 测试全部通过（包括修复后的定向重跑）。UI 测试使用独立的 UserDefaults 数据，不修改普通运行时的演示账户。除原有添加、取消、编辑和去重流程外，新增验证 DBS／渣打默认关联、全账户选择、SGD 后缀、资产／地区切换、一月／一年收益变化、基准叠加、三种 Exposure 视图及压力场景。
+2026-09-09 在 iPhone 17 Pro / iOS 26.1 模拟器执行验证，**9 项核心测试与 7 项 UI 测试全部通过**。UI 测试使用独立的 UserDefaults 数据，不修改普通运行时的演示账户。覆盖 Confirm 左右边角点击与禁用状态、Proceed 和 Cancel 的文字外区域点击、持仓添加与编辑、去重、账户选择与对比、顶部导航及 Global Investment View。Confirm 的边角点击问题已在修复前复现，修复后验证通过。
 
 本轮结果位于 `build/GIVRevision.xcresult`、定向验证 `build/GIVVerified.xcresult` 和最终 GIV 验证 `build/GIVFinal.xcresult`。上述 `build/*.xcresult` 为本地验证产物，不提交到仓库。新版界面截图位于 `Screenshots/`，包括 `wealth.png`、`add-portfolio.png`、`accounts-sg.png`、`accounts-hk.png` 和 `giv-*.png`。
 
