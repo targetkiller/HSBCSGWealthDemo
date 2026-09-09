@@ -1,0 +1,5 @@
+name,symbol,category,currency,quantity,price,averageCost
+Apple,AAPL,Stocks,USD,50,226.8,205
+Vanguard S&P 500 ETF,VOO,Unit trusts,USD,25,518.2,476
+Singapore Government Bond,SGS,Bonds,SGD,20000,1.058,1
+Singapore dollar balance,SGD,Cash and FX,SGD,10000,1,1
