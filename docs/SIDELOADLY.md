@@ -14,6 +14,16 @@ This is the native iPhone demo for **iOS 17 or later**. The release provides an 
 
 Enter your account credentials only in the official Sideloadly application when prompted. The demo and its maintainers do not collect Apple Account passwords or verification codes. Each tester uses their own account; no shared signing account is supplied.
 
+## First launch on Mac
+
+If macOS blocks Sideloadly because it cannot verify the developer, first confirm that you downloaded it from [sideloadly.io](https://sideloadly.io/). To allow this app to open:
+
+1. Click **Done** in the warning.
+2. Open **System Settings → Privacy & Security**, scroll to **Security**, find the message about Sideloadly, and click **Open Anyway**.
+3. Confirm with Touch ID or your Mac login password, then click **Open**.
+
+If **Open Anyway** is missing, try launching Sideloadly again, then return to Privacy & Security. This grants an exception for Sideloadly; it does not establish that the software is safe. [Apple's instructions for opening a blocked app](https://support.apple.com/en-us/102445)
+
 ## Install
 
 1. Download **HSBC-SG.ipa** onto your computer. Keep the `.ipa` file intact.

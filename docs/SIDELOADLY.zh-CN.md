@@ -12,7 +12,18 @@
 - **Windows：**从 [sideloadly.io](https://sideloadly.io/) 下载，并安装该页提供的 **网页版 iTunes 和 iCloud**。Sideloadly 官方要求先替换 Microsoft Store 版本。[官方要求](https://sideloadly.io/)
 - 准备 USB 数据线、网络和自己的 Apple Account。Sideloadly 免费，也支持没有付费开发者会员的账号。[官方功能说明](https://sideloadly.io/)
 
-账号密码和验证码只在官方 Sideloadly 应用提示时输入。这个 Demo 及项目维护者不收集这些信息。每位体验者使用自己的账号，项目不提供共用签名账号。
+Apple Account 密码和验证码只在官方 Sideloadly 应用提示时输入。这个 Demo 及项目维护者不收集这些信息。每位体验者使用自己的账号，项目不提供共用签名账号。
+
+### Mac 提示“Apple 无法验证 Sideloadly”
+
+如果首次打开时提示“未打开 Sideloadly”或“Apple 无法验证 Sideloadly 是否包含恶意软件”，先确认安装包来自 [Sideloadly 官网](https://sideloadly.io/)。确认来源后，可按以下步骤单独允许它打开：
+
+1. 在当前警告弹窗中点击 **「完成」**。
+2. 打开 Mac **「系统设置」→「隐私与安全性」**。
+3. 向下滚动到 **「安全性」**，找到 Sideloadly 被阻止的提示，点击 **「仍要打开」**。
+4. 按系统提示使用 Touch ID 或 **Mac 登录密码**确认，再点击 **「打开」**。这里不是输入 Apple Account 密码。
+
+如果看不到「仍要打开」，重新双击一次 Sideloadly，再返回这个设置页面。允许打开只会为这个应用添加例外，并不代表 Apple 已确认它安全。[Apple 官方说明](https://support.apple.com/zh-cn/102445)
 
 ## 安装
 
@@ -37,6 +48,7 @@
 
 | 现象 | 下一步 |
 | --- | --- |
+| Mac 提示“Apple 无法验证 Sideloadly” | 按上面的 Mac 首次打开步骤，在「隐私与安全性」中选择「仍要打开」。 |
 | 找不到 iPhone | 解锁手机、重新连接 USB 并接受信任提示；检查 Finder／iTunes 是否识别。Windows 需确认安装了要求的网页版组件。 |
 | 提示不受信任的开发者／需要开发者模式 | 完成上面的第 5–6 步。 |
 | 一周后打不开 | 连接电脑续签，或覆盖安装现有 App。 |
