@@ -12,6 +12,8 @@
 
 通过 Apple TestFlight 分发请参阅 **[中文提交指南](docs/TESTFLIGHT.zh-CN.md)** 或 **[English submission guide](docs/TESTFLIGHT.md)**，包含账号配置、归档上传及邀请测试员的步骤。
 
+App Store Connect 截图和审核素材请参阅[原生截图生成说明](docs/APP_STORE_SCREENSHOTS.md)及[元数据草稿](docs/APP_STORE_METADATA.md)。截图脚本从 iPhone、iPad 模拟器导出真实界面，使用 Apple 接受的上传尺寸。
+
 安装后的 App 名称为 **HSBC SG**，图标使用用户提供的 HSBC SG 图片。工程与 scheme 仍为 `WealthHub`。
 
 设计依据：[Figma Wealth Hub](https://www.figma.com/design/asmxuHgmIG5e4NMJHstoZh/Untitled?node-id=0-1)。主界面使用原稿的 Home／Pay／Cards／Wealth 顶部导航，默认进入 Wealth，移除原有自定义底部 Tab Bar。重点展示 Wealth 分析卡片、添加其他持仓、账户选择、配置分析、风险／压力测试、产品服务与底部助手栏。Pay／Cards／Home 和产品业务仅保留简洁预览。

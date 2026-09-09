@@ -4,6 +4,106 @@ import UIKit
 final class WealthHubUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    func testCaptureAppStoreScreenshots() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["APP_STORE_SCREENSHOTS"] == "1",
+                          "Run scripts/capture-app-store-screenshots.sh for the dedicated screenshot flow.")
+        XCUIDevice.shared.orientation = .portrait
+        var app = launch()
+        if ProcessInfo.processInfo.environment["APP_STORE_SCREENSHOT_PAGE"] == "compare" {
+            captureAppStoreComparison(in: app)
+            return
+        }
+        attachAppStoreScreenshot(name: "01-Wealth")
+
+        app.buttons["accountSelector"].tap()
+        XCTAssertTrue(app.staticTexts["accountSelector.title"].waitForExistence(timeout: 3))
+        app.buttons["accountSelector.global"].tap()
+        attachAppStoreScreenshot(name: "02-Select-accounts")
+        app.buttons["accountSelector.close"].tap()
+
+        openAddPortfolio(in: app)
+        attachAppStoreScreenshot(name: "03-Add-a-portfolio")
+        app.buttons["portfolio.add.statement"].tap()
+        let sample = app.buttons["portfolio.statement.sample"]
+        scrollUntilHittable(sample, in: app)
+        sample.tap()
+        XCTAssertTrue(app.navigationBars["Extracted outcome"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["I’ve found 8 holdings in this statement:"].exists)
+        attachAppStoreScreenshot(name: "04-Review-holdings")
+
+        app.terminate()
+        app = launch()
+        app.buttons["wealth.viewDetails"].tap()
+        XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 5))
+        app.buttons["giv.accounts"].tap()
+        XCTAssertTrue(app.buttons["accountSelector.global"].waitForExistence(timeout: 3))
+        app.buttons["accountSelector.global"].tap()
+        app.buttons["Confirm"].tap()
+        XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 3))
+        attachAppStoreScreenshot(name: "05-GIV-Markets")
+
+        app.buttons["giv.tab.Performance"].tap()
+        let year = app.buttons["giv.performance.period.year"]
+        XCTAssertTrue(year.waitForExistence(timeout: 3))
+        year.tap()
+        let chart = app.descendants(matching: .any)["giv.performance.chart"].firstMatch
+        scrollUntilHittable(chart, in: app)
+        if chart.frame.maxY > app.frame.maxY - 40 { app.swipeUp() }
+        attachAppStoreScreenshot(name: "06-GIV-Performance")
+
+        // After scrolling the chart, XCTest can report a tab as hittable
+        // while it is under the navigation bar. Reopen at the top instead.
+        app.terminate()
+        app = launch()
+        app.buttons["wealth.viewDetails"].tap()
+        XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 5))
+        app.buttons["giv.accounts"].tap()
+        XCTAssertTrue(app.buttons["accountSelector.global"].waitForExistence(timeout: 3))
+        app.buttons["accountSelector.global"].tap()
+        app.buttons["Confirm"].tap()
+        app.buttons["giv.tab.Analysis"].tap()
+        XCTAssertTrue(app.buttons["giv.analysis.Currency"].waitForExistence(timeout: 3))
+        attachAppStoreScreenshot(name: "07-GIV-Analysis")
+
+        app.terminate()
+        app = launch()
+        captureAppStoreComparison(in: app)
+    }
+
+    private func captureAppStoreComparison(in app: XCUIApplication) {
+        app.buttons["banking.menu.button"].tap()
+        XCTAssertTrue(app.buttons["banking.menu.compare"].waitForExistence(timeout: 3))
+        app.buttons["banking.menu.compare"].tap()
+        let comparison = app.staticTexts["Portfolio comparison"]
+        scrollUntilHittable(comparison, in: app)
+        // Keep the chart heading below the sheet's navigation bar. A full-app
+        // swipe is too long for the centered iPad sheet and skips the chart.
+        let navigation = app.navigationBars["Compare accounts"]
+        XCTAssertTrue(navigation.exists)
+        let desiredTop = navigation.frame.maxY + 16
+        for _ in 0..<4 {
+            let distance = comparison.frame.minY - desiredTop
+            if abs(distance) < 20 { break }
+            let start = app.coordinate(withNormalizedOffset: .zero).withOffset(
+                CGVector(dx: navigation.frame.midX, dy: navigation.frame.maxY + 280))
+            let end = start.withOffset(CGVector(dx: 0, dy: -min(max(distance, -200), 200)))
+            start.press(forDuration: 0.05, thenDragTo: end)
+        }
+        XCTAssertGreaterThan(comparison.frame.minY, navigation.frame.maxY - 10)
+        attachAppStoreScreenshot(name: "08-Compare-accounts")
+    }
+
+    private func attachAppStoreScreenshot(name: String) {
+        Thread.sleep(forTimeInterval: 0.8)
+        let screen = XCUIScreen.main.screenshot()
+        XCTAssertLessThan(screen.image.size.width, screen.image.size.height,
+                          "App Store screenshots must stay in portrait orientation.")
+        let attachment = XCTAttachment(screenshot: screen)
+        attachment.name = "APPSTORE-" + name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     private func launch() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--uitesting"]

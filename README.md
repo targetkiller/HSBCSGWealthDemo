@@ -12,6 +12,8 @@ The download is an unsigned device IPA for iOS 17 or later. You must sign it you
 
 For distribution through Apple's TestFlight, follow the **[English submission guide](docs/TESTFLIGHT.md)** or **[中文提交指南](docs/TESTFLIGHT.zh-CN.md)**. They cover account setup, archiving, uploading, and inviting testers.
 
+For App Store Connect screenshots and review materials, see the [native screenshot workflow](docs/APP_STORE_SCREENSHOTS.md) and [metadata draft](docs/APP_STORE_METADATA.md). The capture script exports actual iPhone and iPad screens at accepted upload dimensions.
+
 The installed app is named **HSBC SG** and uses the supplied HSBC SG icon. The Xcode project and scheme are named `WealthHub`.
 
 Based on the [Figma Wealth Hub design](https://www.figma.com/design/asmxuHgmIG5e4NMJHstoZh/Untitled?node-id=0-1). The app uses the design's Home / Pay / Cards / Wealth navigation at the top and opens on Wealth. The main focus is portfolio analysis, adding holdings, account selection, allocation, risk and stress scenarios, product previews, and the assistant bar. Home, Pay, Cards, and product journeys are lightweight previews.
