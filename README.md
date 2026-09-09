@@ -1,16 +1,18 @@
 # HSBC SG iOS Demo
 
-原生 SwiftUI + Swift Charts 资产分析、多账户管理与账户对比 Demo。最低 iOS 17，无第三方运行时依赖。
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-安装后的 App 名称为 **HSBC SG**，图标使用用户提供的 HSBC SG 图片。工程与 scheme 仍为 `WealthHub`。
+A native SwiftUI and Swift Charts demo for portfolio analysis, account management, and comparison across accounts. Requires iOS 17 or later and has no third-party runtime dependencies.
 
-设计依据：[Figma Wealth Hub](https://www.figma.com/design/asmxuHgmIG5e4NMJHstoZh/Untitled?node-id=0-1)。主界面使用原稿的 Home／Pay／Cards／Wealth 顶部导航，默认进入 Wealth，移除原有自定义底部 Tab Bar。重点展示 Wealth 分析卡片、添加其他持仓、账户选择、配置分析、风险／压力测试、产品服务与底部助手栏。Pay／Cards／Home 和产品业务仅保留简洁预览。
+The installed app is named **HSBC SG** and uses the supplied HSBC SG icon. The Xcode project and scheme are named `WealthHub`.
 
-## 运行
+Based on the [Figma Wealth Hub design](https://www.figma.com/design/asmxuHgmIG5e4NMJHstoZh/Untitled?node-id=0-1). The app uses the design's Home / Pay / Cards / Wealth navigation at the top and opens on Wealth. The main focus is portfolio analysis, adding holdings, account selection, allocation, risk and stress scenarios, product previews, and the assistant bar. Home, Pay, Cards, and product journeys are lightweight previews.
 
-打开 `WealthHub.xcodeproj`，选择 **WealthHub** scheme 与 iPhone 模拟器，点击 Run。模拟器不需要开发者签名；真机运行需在 Signing & Capabilities 选择自己的开发团队。
+## Run the app
 
-已在 iPhone 模拟器构建并运行。也可使用随附脚本一键构建、安装和启动：
+Open `WealthHub.xcodeproj`, select the **WealthHub** scheme and an iPhone simulator, then click Run. Simulator builds do not require a development signing identity. For a physical device, select your development team under Signing & Capabilities.
+
+The app has been built and run on an iPhone simulator. You can also use the included script to build, install, and launch it:
 
 ```bash
 git clone https://github.com/targetkiller/HSBCSGWealthDemo.git
@@ -18,79 +20,82 @@ cd HSBCSGWealthDemo
 bash scripts/run-demo.sh
 ```
 
-脚本选择已启动的 iPhone 模拟器（否则使用第一个可用 iPhone）；也可传入模拟器 UDID。需要已安装 Xcode、iOS 模拟器运行时及 Python 3。若有 XcodeGen，自动重新生成工程；否则使用已提交的 `.xcodeproj`。
+The script uses a booted iPhone simulator, or the first available iPhone if none is running. You can pass a simulator UDID as an argument. Xcode, an iOS simulator runtime, and Python 3 are required. If XcodeGen is installed, the script regenerates the project; otherwise, it uses the committed `.xcodeproj`.
 
-## 界面预览
+## Screenshots
 
-| Wealth | 添加持仓 | Global Investment View | Performance |
+| Wealth | Add holdings | Global Investment View | Performance |
 | --- | --- | --- | --- |
 | <img src="Screenshots/wealth.png" width="220" alt="Wealth overview"> | <img src="Screenshots/add-portfolio.png" width="220" alt="Add a portfolio"> | <img src="Screenshots/giv-markets.png" width="220" alt="Global Investment View"> | <img src="Screenshots/giv-performance.png" width="220" alt="Performance chart"> |
 
-## 可演示流程
+## Demo flows
 
-1. **Wealth**：默认新加坡 HSBC 股票投资账户；选择单／多账户、切换报告币种、总市值、收益及 View details。金额统一使用 `1,234.00 SGD` 等币种后缀格式。
-2. **Portfolio analysis**：Generate AI analysis → 加载 → 展开的 What happened／What’s next；支持收起、重新生成。内容随所选持仓计算，不编造实时市场新闻。
-3. **Add other holdings to analyse**：打开原稿 Add a portfolio 底部弹层，可添加全球 HSBC 账户、连接其他银行或上传／扫描账单。全球 HSBC 路径选择现有账户而不重复创建；银行路径使用本地样本及确认步骤。
-4. **Upload or scan a statement**：Upload／Take a photo／Cancel；支持 CSV、PDF 和图片本地提取。模拟器无摄像头时可选择图库或示例账单。识别后进入 Extracted outcome，逐项编辑持仓，Proceed 后保存且只保存一次；取消不会创建账户。
-5. **返回分析**：新增持仓自动并入当前选择、刷新分析及总资产；View my global holdings 进入包含全部账户的 Global Investment View。
-6. **Global Investment View / GIV - L3**：顶部账户胶囊可跨银行、跨市场筛选；Markets 提供资产／地区双环图及可展开持仓；Performance 支持市场、过去一月／一年／自定义日期、TWRR／MWRR、可拖动的收益曲线与 S&P 500／HSBC 参考组合／HSI 基准；Analysis 提供币种半环图、地区地图、行业面积图、分析卡片及可切换的压力场景。
-7. **Your holdings**：默认原稿的横向配置条和资产类别列表；支持展开明细，并切换 Allocation analysis／Risk analysis、双层环形图和压力情景。
-8. **产品服务／助手栏**：保留原稿布局，产品业务为预览；助手支持本地组合摘要、配置问题与添加指引。
-9. **菜单中的辅助功能**：账户管理、账户对比、设置仍可使用，作为 Wealth 的辅助入口，不再占据底部导航。
+1. **Wealth:** Starts with the HSBC Singapore equity investment account. Select one or more accounts, change the reporting currency, and view market value, returns, and account details. Amounts use a currency suffix, such as `1,234.00 SGD`.
+2. **Portfolio analysis:** Generate AI analysis → loading → expanded What happened / What's next. Collapse or regenerate the analysis. Its content is calculated from the selected holdings, without fabricated live market news.
+3. **Add other holdings to analyse:** Opens the Add a portfolio sheet. Include global HSBC accounts, connect another bank, or upload or scan a statement. The HSBC flow selects existing accounts without creating duplicates. Other bank connections use local sample data and a confirmation step.
+4. **Upload or scan a statement:** Upload / Take a photo / Cancel. Extract holdings locally from CSV, PDF, or images. On a simulator without a camera, use the photo library or a sample statement. Review and edit holdings in Extracted outcome, then tap Proceed to save once. Cancelling does not create an account.
+5. **Return to analysis:** New holdings are included in the current selection, and analysis and totals refresh. View my global holdings opens Global Investment View with all accounts included.
+6. **Global Investment View / GIV - L3:** Filter accounts across banks and markets from the account selector. Markets provides double-ring asset and region charts with expandable holdings. Performance supports market filters, the past month or year, custom dates, TWRR / MWRR, an interactive return chart, and S&P 500 / HSBC reference portfolio / HSI benchmarks. Analysis provides a currency semicircle chart, region map, sector treemap, analysis cards, and selectable stress scenarios.
+7. **Your holdings:** Displays the design's allocation bar and asset-class list. Expand holding details or switch to Allocation analysis / Risk analysis, double-ring charts, and stress scenarios.
+8. **Products and assistant bar:** Follows the design's layout. Product journeys are previews; the assistant provides local portfolio summaries, allocation responses, and guidance on adding holdings.
+9. **Supporting features in the menu:** Account management, account comparison, and settings remain available as supporting Wealth features.
 
-快速演示路线：Wealth → Generate AI analysis → Add other holdings to analyse → Upload or scan a statement → Try a sample statement → 编辑任意持仓 → Proceed → 分析刷新 → View my global holdings。
+Suggested walkthrough: Wealth → Generate AI analysis → Add other holdings to analyse → Upload or scan a statement → Try a sample statement → edit a holding → Proceed → refreshed analysis → View my global holdings.
 
-## 数据口径与范围
+## Demo data and calculation assumptions
 
-- 默认预关联 8 个演示账户、40 项持仓。新加坡：HSBC Current Account、(068) Equity Investment Account、(085) Unit Trust Investment Account、DBS Account；香港：HSBC Current Account、HSBC One Investment Services、HSBC One FundMax Account、Standard Chartered Account。账户选择面板展示账号及银行标识，支持全局、地区和跨地区多选。
-- 老版本的 3 个默认账户会执行一次迁移：补齐新演示账户和分类信息，同时保留原 ID、用户修改和新增账户。迁移完成后的删除不会被自动恢复；已清空的组合继续保持为空。
-- 本地演示账户和固定汇率，无银行 API、行情 API、真实金融交易或远程数据上传。
-- 市值 = 数量 × 当前单价；成本 = 数量 × 平均成本；未实现收益 = 市值 − 成本。跨币种计算先通过固定汇率统一到展示币种。
-- 资产总览的收益率 = 未实现收益 ÷ 成本，零成本显示 N/A。GIV Performance 的历史与基准曲线是以 2026-09-09 为锚点的确定性演示序列，随所选持仓、市场和日期更新；不是实际历史业绩。基准走势独立于账户选择。演示不设外部现金流，因此展示的期间 TWRR 与 MWRR 相同。
-- GIV 地区和行业图使用每项持仓的分类字段；导入数据未填写分类时，地区回退到所属账户市场，行业回退到资产类别。基金与结构性产品使用主要分类，不提供底层资产穿透分析。币种图按持仓报价币种聚合。
-- 风险散点按资产类别使用固定示例评分；压力测试对当前仓位施加美元下跌、股票市场下跌或香港持仓下跌等简单冲击。AI analysis 是本地模板生成，不调用大模型。
-- 新 Wealth 账单流程：导入文件上限 10 MB、PDF 最多 5 页、图片最多 4,000 万像素、最多 1,000 条持仓。CSV 使用严格七列格式；PDF 优先提取文本，必要时使用 Vision 本地 OCR；图片使用 Vision 本地 OCR。不会把无法识别的真实文件替换为演示持仓。
-- 文档解析支持清楚标明 shares／数量的持仓行和可识别的表格；复杂券商格式仍需人工核对。缺失的数量、价格或成本必须在预览中补齐；识别不可靠时显示错误供重试。地区／币种也应在预览中确认。不是通用券商账单解析服务。
-- 为便于演示，Try a sample statement 提供设计稿中的 8 条港股持仓，价格与成本为示例。既有菜单内的旧 CSV 导入页面仍限制 1 MB，建议演示使用 Wealth 新入口。
-- 数据存于应用沙盒 UserDefaults，仅用于 Demo。生产版本需补充安全存储、账户认证、授权服务、真实数据适配和合规评估。
+- Includes **8 prelinked demo accounts and 40 holdings**. Singapore: HSBC Current Account, (068) Equity Investment Account, (085) Unit Trust Investment Account, and DBS Account. Hong Kong: HSBC Current Account, HSBC One Investment Services, HSBC One FundMax Account, and Standard Chartered Account. The account selector displays account numbers and bank marks and supports global, regional, and cross-region selection.
+- A one-time migration upgrades the previous three default accounts, adding demo accounts and classifications while preserving IDs, user edits, and user-created accounts. Subsequent deletions are not automatically restored, and an intentionally empty portfolio stays empty.
+- Accounts and exchange rates are local demo data. There are no bank APIs, market-data APIs, real financial transactions, or remote document uploads.
+- Market value = quantity × current unit price. Cost = quantity × average unit cost. Unrealised gain/loss = market value − cost. Values are converted into the reporting currency using fixed demo exchange rates.
+- The overview return rate is unrealised gain/loss divided by cost; zero cost displays N/A. GIV Performance uses deterministic illustrative history anchored to **2026-09-09**, updated for the selected holdings, market, and dates. These are not actual historical returns. Benchmark series are independent of account selection. No external cash flows are modelled, so the displayed period TWRR and MWRR are equal.
+- GIV region and sector charts use each holding's classification fields. When imported data has no classification, the region falls back to the account's market and the sector falls back to an asset-class-based label. Funds and structured products use a primary classification, without look-through analysis. Currency exposure is grouped by each holding's quotation currency.
+- Risk plots use fixed illustrative scores by asset class. Stress tests apply simple shocks to current holdings, such as a weaker US dollar, falling equity markets, or a decline in Hong Kong holdings. AI analysis uses local templates and does not call a language model.
+- The Wealth statement flow accepts files up to **10 MB**, PDFs up to **5 pages**, images up to **40 megapixels**, and up to **1,000 holdings**. CSV requires a strict seven-column format. PDFs use text extraction first, with local Vision OCR when needed; images use local Vision OCR. Unrecognised files are not silently replaced with sample holdings.
+- Document parsing supports clearly labelled share quantities and recognisable tables. Complex broker formats require manual review. Missing quantities, prices, or average costs must be completed before confirmation. Unreliable extraction shows an error so the user can retry. Review currencies and region assumptions as well. This is not a universal brokerage statement parser.
+- Try a sample statement includes the design's eight Hong Kong stock holdings with illustrative prices and costs. The older CSV import screen in the menu retains its 1 MB limit; use the Wealth entry point for the main demo.
+- Data is stored in the app's sandbox using UserDefaults. A production implementation would need secure storage, account authentication, authorisation services, real data adapters, and appropriate compliance review.
 
-导入示例：`Samples/statement.csv`。支持的 category：`Stocks`、`Unit trusts`、`Bonds`、`Cash and FX`、`Structured products`、`Insurance`、`Options`。
+Sample import file: [`Samples/statement.csv`](Samples/statement.csv). Supported `category` values: `Stocks`, `Unit trusts`, `Bonds`, `Cash and FX`, `Structured products`, `Insurance`, and `Options`.
 
-## 测试
+## Tests
 
 ```bash
 swift test
 ```
 
-核心逻辑可独立在 macOS 14+ 测试，不依赖模拟器。已通过 9 项测试，覆盖混合币种估值与配置汇总、账户／持仓 CRUD、CSV 校验、币种后缀、默认关联账户、旧版数据兼容、保留用户编辑的迁移及删除／空组合持久化。
+Core logic can be tested independently on macOS 14 or later, without a simulator. Nine core tests have passed, covering valuation and allocation across currencies, account and holding CRUD, CSV validation, currency suffixes, prelinked accounts, compatibility with older data, migration that preserves user edits, and persistence after deletion or clearing a portfolio.
 
-附带 `WealthHubUITests`，覆盖顶部导航、账户选择／菜单对比、示例导入／编辑／返回分析、HSBC 账户重复包含检查，以及预关联 DBS／渣打和完整 GIV - L3 流程：
+`WealthHubUITests` covers top navigation, account selection and comparison, sample statement import and editing, returning to analysis, repeated inclusion of HSBC accounts, prelinked DBS and Standard Chartered accounts, and the GIV - L3 flow:
 
 ```bash
 xcodebuild -project WealthHub.xcodeproj -scheme WealthHub \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
-2026-09-09 在 iPhone 17 Pro / iOS 26.3.1 模拟器执行验证，9 项核心测试与 5 项 UI 测试全部通过（包括修复后的定向重跑）。UI 测试使用独立的 UserDefaults 数据，不修改普通运行时的演示账户。除原有添加、取消、编辑和去重流程外，新增验证 DBS／渣打默认关联、全账户选择、SGD 后缀、资产／地区切换、一月／一年收益变化、基准叠加、三种 Exposure 视图及压力场景。
+Verification on **2026-09-09**, using an **iPhone 17 Pro / iOS 26.3.1 simulator**: all **9 core tests and 5 UI tests passed**, including targeted reruns after fixes. UI tests use isolated UserDefaults data and do not change the normal demo accounts. Coverage includes adding, cancelling, editing, duplicate prevention, linked banks, selecting all accounts, SGD suffixes, asset and region switching, monthly and yearly return changes, benchmark overlays, all three Exposure views, and stress scenarios.
 
-本轮结果位于 `build/GIVRevision.xcresult`、定向验证 `build/GIVVerified.xcresult` 和最终 GIV 验证 `build/GIVFinal.xcresult`。新版界面截图位于 `Screenshots/`，包括 `wealth.png`、`add-portfolio.png`、`accounts-sg.png`、`accounts-hk.png` 和 `giv-*.png`。
+Local verification results are stored in `build/GIVRevision.xcresult`, `build/GIVVerified.xcresult`, and the final GIV run, `build/GIVFinal.xcresult`. These generated result bundles are excluded from the repository. Committed previews are in [`Screenshots/`](Screenshots/), including `wealth.png`, `add-portfolio.png`, `accounts-sg.png`, `accounts-hk.png`, and `giv-*.png`.
 
-## 结构
+## Project structure
 
-- `Models.swift`：账户、持仓、资产类别、币种、示例数据。
-- `PortfolioStore.swift`：聚合计算、Observation 状态、本地持久化。
-- `StatementParser.swift`：可独立测试的 CSV 解析。
-- `WealthView.swift`：按 Figma 重做的 Wealth 主页面、分析卡片、持仓和压力情景。
-- `BankingNavigation.swift`：Home／Pay／Cards／Wealth 顶部导航及菜单。
-- `WealthSupportingViews.swift`：产品服务、助手栏和业务预览。
-- `AddPortfolioSheet.swift`：三种添加方式、可编辑识别结果、完成回调。
-- `StatementExtractionService.swift`：PDF、图片和 CSV 的本地提取。
-- `InvestmentViews.swift`：Global Investment View 和风险图组件。
-- `GIVPortfolioData.swift`：账户／持仓、资产、币种、地区和行业聚合。
-- `GIVPerformanceView.swift`：演示收益序列、基准切换、日期筛选和图表选择。
-- `GIVAnalysisView.swift`：币种、地区、行业配置图及情景分析。
-- `AccountsView.swift`：账户选择、管理及编辑。
-- `AddAccountFlow.swift`：连接演示、文件导入与预览。
-- `CompareView.swift`：账户对比与设置。
-- `Theme.swift`：配色、公共组件及图表。
-- `project.yml`：XcodeGen 工程源配置；`Package.swift`：独立核心测试入口。
+Swift source files are in `WealthHub/`:
+
+- `Models.swift`: Accounts, holdings, asset classes, currencies, and demo data.
+- `PortfolioStore.swift`: Aggregation, observable state, and local persistence.
+- `StatementParser.swift`: Independently testable CSV parsing.
+- `WealthView.swift`: Wealth overview, analysis cards, holdings, and stress scenarios.
+- `BankingNavigation.swift`: Home / Pay / Cards / Wealth navigation and menu.
+- `WealthSupportingViews.swift`: Product previews and the assistant bar.
+- `AddPortfolioSheet.swift`: Three ways to add holdings, editable extraction results, and completion callbacks.
+- `StatementExtractionService.swift`: Local PDF, image, and CSV extraction.
+- `InvestmentViews.swift`: Global Investment View and risk components.
+- `GIVPortfolioData.swift`: Aggregation by account, holding, asset class, currency, region, and sector.
+- `GIVPerformanceView.swift`: Illustrative return series, benchmark selection, date filters, and chart selection.
+- `GIVAnalysisView.swift`: Currency, region, and sector charts plus scenario analysis.
+- `AccountsView.swift`: Account selection, management, and editing.
+- `AddAccountFlow.swift`: Demo connections, file import, and preview.
+- `CompareView.swift`: Account comparison and settings.
+- `Theme.swift`: Colours, shared components, and charts.
+
+At the repository root, `project.yml` is the XcodeGen configuration and `Package.swift` provides the standalone core test target.
