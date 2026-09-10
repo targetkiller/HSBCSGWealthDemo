@@ -29,7 +29,7 @@ Daily account, holding, and portfolio-value changes belong in **[Portfolios.csv]
 | [assistant_suggestions.csv](assistant_suggestions.csv) | Suggested prompts in display order: `id,prompt`. |
 | [assistant_rules.csv](assistant_rules.csv) | Local answer rules: `keywords` and `response`. Preserve supported response placeholders. The final row has empty keywords and serves as the fallback response. |
 
-Within each table, keep IDs unique. Row order determines chooser, card, rule, or scenario order where applicable. `defaultAccountID` is a valid UUID used to select a default account in `Portfolios.csv`; if that account has been removed, selection falls back to the first configured account. `defaultBankID`, `defaultMarketID`, and `defaultWealthScenarioID` refer to existing rows in their respective tables. The default bank must be enabled in both bank choosers.
+Within each table, keep IDs unique. Row order determines chooser, card, rule, or scenario order where applicable. `defaultAccountID` is a valid UUID used to select an initial account in `Portfolios.csv`; if that account has been removed, selection falls back to the first initial account. A matching account must have `availability=initial`. `defaultBankID`, `defaultMarketID`, and `defaultWealthScenarioID` refer to existing rows in their respective tables. The default bank must be enabled in both bank choosers.
 
 ## Portfolios.csv structural reference
 
@@ -38,7 +38,8 @@ Within each table, keep IDs unique. Row order determines chooser, card, rule, or
 | Field | Meaning |
 | --- | --- |
 | `portfolioID` | Stable group key, such as `hsbc-sg-current`; required on every row. |
-| `purpose` | `account` for defaults, `template` for new-account metadata, or `holdings` for standalone samples. |
+| `purpose` | `account` for the full catalog, `template` for new-account metadata, or `holdings` for standalone samples. |
+| `availability` | Required for account groups: `initial` appears on each cold launch, `linkable` is added through account-linking flows, and `hidden` is kept only in the catalog. Leave blank for templates and holdings-only groups. At least one initial account is required. |
 | `name`, `bank`, `market`, `currency` | Account or template display metadata. `currency` is its reporting currency. |
 | `portfolioValue` | Optional nonnegative target total, in account currency. Blank means calculate from holdings. |
 | `accountNumber`, `note`, `colorIndex` | Optional account number, descriptive note, and account color selection. Preserve existing color values unless a visual change is intended. |
@@ -59,7 +60,7 @@ The supplied account/template/holding groups include:
 
 Do not rename flow keys such as `bank-connection`, `statement-review`, or `csv-import` without updating their consumers. Template names may contain `{bank}` and statement-review notes may contain `{source}`. Existing configured UUIDs remain stable for persistence and migration. Preserve IDs when changing names or values; if newly generated IDs need to survive a later identifier change, first place their generated values explicitly in the CSV.
 
-For a new default account, copy an existing group, assign a distinct `portfolioID`, and clear copied `accountID` and `holdingID` values to generate new IDs. For a new holding, add a row with the target `portfolioID`, fill its holding fields, and leave account metadata and `holdingID` blank. Validate before rebuilding. When removing an account, update `defaultAccountID` if a particular replacement should be selected; otherwise the first configured account is used. Old compatibility rules may remain. Any `holdingsFrom` references must still point to an existing group.
+For a new account, copy an existing group, assign a distinct `portfolioID`, set `availability`, and clear copied `accountID` and `holdingID` values to generate new IDs. For a new holding, add a row with the target `portfolioID`, fill its holding fields, and leave account metadata and `holdingID` blank. Validate before rebuilding. When removing an account, update `defaultAccountID` if a particular replacement should be selected; otherwise the first initial account is used. Old compatibility rules may remain. Any `holdingsFrom` references must still point to an existing group.
 
 ## Values and calculations
 
@@ -90,7 +91,7 @@ The supplied illustrative YTD targets are:
 | Standard Chartered | 3.10% |
 | Other banks (`*` profile) | 3.30% |
 
-With the supplied holdings, All global accounts has a cost-weighted YTD return of approximately **8.30%**. This value is calculated from the actual selected accounts; it is not an override. Changing holdings, portfolio values, account selection, or market filters can change the aggregate. Selecting only the Equity Investment Account gives My total return **11.20%**, exactly overlapping its reference. The corresponding HK source behaves the same way.
+With the supplied holdings, All global accounts has a cost-weighted YTD return of approximately **8.30% after adding all four linkable accounts**. Each fresh session starts with only three HSBC accounts, so its initial global return is **11.20%**. These values are calculated from the actual selected accounts; they are not overrides. Changing holdings, portfolio values, account selection, or market filters can change the aggregate. Selecting only the Equity Investment Account gives My total return **11.20%**, exactly overlapping its reference. The corresponding HK source behaves the same way.
 
 HSBC reference portfolio and S&P 500 are selected by default through `benchmarks.defaultSelected`. The reference uses the current account and holdings saved in the app, including local edits. It has no separate reference holdings or independently configured curve.
 
@@ -130,7 +131,7 @@ For month, year, or customized ranges, the endpoint uses a constant compounded r
 
 These settings affect only the **illustrative Performance chart**. They do not change holding prices, average costs, portfolio values, or unrealised gain/loss. TWRR and MWRR remain equal because the demo models no external cash flows. The targets describe a presentation scenario, not actual bank or index performance.
 
-BA 日常仍只需修改 `Portfolios.csv`。YTD 是当年 1 月 1 日至 `asOfDate`；基准目标在 `benchmarks.csv` 修改，银行目标在 `performance_banks.csv` 的 `ytdReturnPercent` 修改。当前全局组合约 8.3% 来自实际账户成本加权，单选 SG 或 HK 参考源时仍与 HSBC reference 精确重叠并显示 11.2%。需要调整波动时修改波幅、回撤深度/位置/宽度和恢复位置；这些设置不改变组合价值。
+BA 日常仍只需修改 `Portfolios.csv`。YTD 是当年 1 月 1 日至 `asOfDate`；基准目标在 `benchmarks.csv` 修改，银行目标在 `performance_banks.csv` 的 `ytdReturnPercent` 修改。初始 3 个汇丰账户的全局收益为 11.2%；添加全部 4 个可链接账户后，全局组合约 8.3%，来自实际账户成本加权。单选 SG 或 HK 参考源时仍与 HSBC reference 精确重叠并显示 11.2%。需要调整波动时修改波幅、回撤深度/位置/宽度和恢复位置；这些设置不改变组合价值。
 
 ## Editing and validation
 
@@ -144,8 +145,8 @@ From the project root:
 ./scripts/sample-data.sh export-statement
 ```
 
-Validation uses the app's loader and checks both `Portfolios.csv` and `Others/`. Summary shows default account names, reporting currencies, market values, costs, and holding counts. Export generates `build/Sample/statement.csv` from the `csv-file-export` group in `Portfolios.csv`; an optional final argument selects another output path. Regenerate the statement after changing its source rows. Do not maintain a second editable statement fixture.
+Validation uses the app's loader and checks both `Portfolios.csv` and `Others/`. Summary shows catalog account names, reporting currencies, market values, costs, and holding counts. Export generates `build/Sample/statement.csv` from the `csv-file-export` group in `Portfolios.csv`; an optional final argument selects another output path. Regenerate the statement after changing its source rows. Do not maintain a second editable statement fixture.
 
-Rebuild to bundle edited CSV files. Existing saved accounts remain intact. **Menu → Settings → Restore demo data** replaces local accounts and holdings with the new defaults, discarding local edits. Configuration errors show on the startup error screen instead of silently falling back to hardcoded data.
+Rebuild to bundle edited CSV files. Each new app process starts a fresh demo from `initial` accounts, replacing only the app's saved portfolio snapshot. Linked accounts, scanned imports, and edits persist locally during the session; moving between foreground and background retains them. **Menu → Settings → Restore demo data** resets the current session immediately. Configuration errors show on the startup error screen before any saved portfolio is replaced.
 
 All exchange rates, risk scores, scenario shocks, and benchmark/history parameters are demo inputs, not live quotes or actual historical performance. Bank connections and assistant responses use local sample data.

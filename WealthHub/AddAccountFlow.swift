@@ -51,10 +51,9 @@ struct AddAccountFlow: View {
         }.navigationTitle("Add account").navigationBarTitleDisplayMode(.inline)
     }
     private func connect() {
-        var account = SampleData.makeAccount(template: "linked-account", currency: Currency(rawValue: market.string("currency"))!)
-        account.institution = bank
-        account.name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? account.name.replacingOccurrences(of: "{bank}", with: bank) : name
-        account.market = market.string("name"); account.colorIndex = store.accounts.count
+        var account = store.demoConnectionAccount(bank: bank, market: market.string("name"))
+        let nickname = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !nickname.isEmpty { account.name = nickname }
         store.save(account); addedID = account.id; step = 2
     }
 }

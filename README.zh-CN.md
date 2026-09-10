@@ -42,7 +42,7 @@ bash scripts/run-demo.sh
 
 1. **Wealth**：默认新加坡 HSBC 股票投资账户；选择单／多账户、切换报告币种、总市值、收益及 View details。金额统一使用 `1,234.00 SGD` 等币种后缀格式。
 2. **Portfolio analysis**：Generate AI analysis → 加载 → 展开的 What happened／What’s next；支持收起、重新生成。内容随所选持仓计算，不编造实时市场新闻。
-3. **Add other holdings to analyse**：打开原稿 Add a portfolio 底部弹层，可添加全球 HSBC 账户、连接其他银行或上传／扫描账单。全球 HSBC 路径选择现有账户而不重复创建；银行路径使用本地样本及确认步骤。
+3. **Add other holdings to analyse**：打开原稿 Add a portfolio 底部弹层，可关联剩余的 HSBC Unit Trust／FundMax 账户、连接 DBS／Standard Chartered 或上传／扫描账单。确认后才加入账户；重复连接同一家银行会使用当前已保存的账户，保留修改并避免重复创建。
 4. **Upload or scan a statement**：Upload 可从相册或文件选择，Take a photo 使用摄像头，无可用摄像头时可回退到相册；CSV、PDF 和图片均在本地识别。支持 FUTU／moomoo Accounts 截图的上下两行“市值／数量、现价／成本”结构及多币种持仓，并自动建议账户机构。Extracted outcome 展示可编辑的账户与持仓详情，Proceed 后只新增一个账户；取消不会创建账户，也不会连接真实券商。
 5. **返回分析**：新增持仓自动并入当前选择、刷新分析及总资产；View my global holdings 进入包含全部账户的 Global Investment View。
 6. **Global Investment View / GIV - L3**：顶部账户胶囊可跨银行、跨市场筛选；Markets 按“For Sept 14 Valentin's demo”设计，采用顶部占比条与纵向可展开的持仓明细，展示金额、收益及账户市场标签；Performance 默认 YTD，同时支持过去一月／一年／自定义日期、市场筛选、TWRR／MWRR、可拖动的收益曲线与 S&P 500／HSBC 参考组合／HSI 对比；Analysis 提供币种半环图、地区地图、行业面积图、分析卡片及可切换的压力场景。
@@ -54,13 +54,13 @@ bash scripts/run-demo.sh
 
 ## 数据口径与范围
 
-BA 同事日常只需修改 **[Sample/Portfolios.csv](Sample/Portfolios.csv)**，账户、持仓与组合价值集中在这一张表。可直接填写 `holdingValue` 或 `portfolioValue` 设置目标市值，留空则按数量与价格计算；操作示例见 **[账户与组合编辑指南](Sample/README.md)**。汇率、分析参数、场景等其余配置放在 **[Sample/Others/](Sample/Others/README.md)**。已有本地账户会保留，直到手动恢复演示数据。
+BA 同事日常只需修改 **[Sample/Portfolios.csv](Sample/Portfolios.csv)**，账户、持仓与组合价值集中在这一张表。可直接填写 `holdingValue` 或 `portfolioValue` 设置目标市值，留空则按数量与价格计算；通过 `availability` 设置默认显示（`initial`）、后续关联（`linkable`）或隐藏（`hidden`）。操作示例见 **[账户与组合编辑指南](Sample/README.md)**。汇率、分析参数、场景等其余配置放在 **[Sample/Others/](Sample/Others/README.md)**。彻底关闭 App 后重新打开，即加载配置中的初始账户。
 
-- 默认预关联 8 个演示账户、40 项持仓。新加坡：HSBC Current Account、(068) Equity Investment Account、(085) Unit Trust Investment Account、DBS Account；香港：HSBC Current Account、HSBC One Investment Services、HSBC One FundMax Account、Standard Chartered Account。账户选择面板展示账号及银行标识，支持全局、地区和跨地区多选。
-- 老版本的 3 个默认账户会执行一次迁移：补齐新演示账户和分类信息，同时保留原 ID、用户修改和新增账户。迁移完成后的删除不会被自动恢复；已清空的组合继续保持为空。
+- 每次重新启动默认只有 **3 个 HSBC 账户**：新加坡 Current Account、新加坡 (068) Equity Investment Account，以及香港 HSBC One Investment Services。新加坡 Unit Trust、香港 FundMax 留待关联；DBS 新加坡、Standard Chartered 香港通过其他银行入口添加；FUTU 只在确认截图或账单导入后出现。配置表仍保留隐藏的香港 Current Account。
+- 新增、导入、修改、删除及展示设置在本次运行期间保存到本地，切到后台再回来会保留。**彻底关闭 App 后重新打开，会重置为三个初始账户**，便于每次重复首次关联与上传体验。也可通过 Settings → Restore demo data 在当前运行中重置。
 - 本地演示账户和固定汇率，无银行 API、行情 API、真实金融交易或远程数据上传。
 - 市值 = 数量 × 当前单价；成本 = 数量 × 平均成本；未实现收益 = 市值 − 成本。跨币种计算先通过固定汇率统一到展示币种。
-- 资产总览的收益率 = 未实现收益 ÷ 成本，零成本显示 N/A。GIV Performance 根据配置的演示日期生成确定性历史序列，各银行与基准具有不同的回撤和恢复走势。默认示例 YTD 收益为 **S&P 500 9.6%、HSBC reference 11.2%、全部全球账户约 8.3%**，均为虚构演示数据，并非真实历史业绩。参考组合默认勾选：新加坡使用 Equity Investment Account，香港使用 HSBC One Investment Services；只选该源账户时，个人曲线与参考曲线重叠。S&P 500 与 HSI 不随账户选择变化。演示不设外部现金流，因此展示的期间 TWRR 与 MWRR 相同。BA 可修改的收益及波动参数见 [Sample/Others](Sample/Others/README.md)。
+- 资产总览的收益率 = 未实现收益 ÷ 成本，零成本显示 N/A。GIV Performance 根据配置的演示日期生成确定性历史序列，各银行与基准具有不同的回撤和恢复走势。示例 YTD 收益为 **S&P 500 9.6%、HSBC reference 11.2%**；个人收益随所选账户变化，关联 DBS／Standard Chartered 后即可加入它们相对落后的收益进行比较。以上均为虚构演示数据，并非真实历史业绩。参考组合默认勾选：新加坡使用 Equity Investment Account，香港使用 HSBC One Investment Services；只选该源账户时，个人曲线与参考曲线重叠。S&P 500 与 HSI 不随账户选择变化。演示不设外部现金流，因此展示的期间 TWRR 与 MWRR 相同。BA 可修改的收益及波动参数见 [Sample/Others](Sample/Others/README.md)。
 - GIV 地区和行业图使用每项持仓的分类字段；导入数据未填写分类时，地区回退到所属账户市场，行业回退到资产类别。基金与结构性产品使用主要分类，不提供底层资产穿透分析。币种图按持仓报价币种聚合。
 - 风险散点按资产类别使用固定示例评分；压力测试对当前仓位施加美元下跌、股票市场下跌或香港持仓下跌等简单冲击。AI analysis 是本地模板生成，不调用大模型。
 - 新 Wealth 账单流程：导入文件上限 10 MB、PDF 最多 5 页、图片最多 4,000 万像素、最多 1,000 条持仓。CSV 使用严格七列格式；PDF 优先提取文本，必要时使用 Vision 本地 OCR；图片使用 Vision 本地 OCR。不会把无法识别的真实文件替换为演示持仓。
@@ -76,18 +76,18 @@ BA 同事日常只需修改 **[Sample/Portfolios.csv](Sample/Portfolios.csv)**�
 swift test
 ```
 
-核心逻辑可独立在 macOS 14+ 测试，不依赖模拟器。覆盖混合币种估值与配置汇总、账户／持仓 CRUD、CSV 校验、默认关联账户、数据迁移及持久化、YTD 收益目标、曲线走势差异及参考源账户一致性。
+核心逻辑可独立在 macOS 14+ 测试，不依赖模拟器。覆盖混合币种估值与配置汇总、账户／持仓 CRUD、CSV 可用性校验、冷启动重置与本次运行持久化、YTD 收益目标、曲线走势差异及参考源账户一致性。
 
-附带 `WealthHubUITests`，覆盖顶部导航、账户选择／菜单对比、示例导入／编辑／返回分析、HSBC 账户重复包含检查，以及预关联 DBS／渣打和完整 GIV - L3 流程：
+附带 `WealthHubUITests`，覆盖顶部导航、账户选择／菜单对比、示例导入／编辑／返回分析、首次关联 HSBC／其他银行、后台保留状态、冷启动重置及完整 GIV - L3 流程：
 
 ```bash
 xcodebuild -project WealthHub.xcodeproj -scheme WealthHub \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
 ```
 
-2026-09-09 在 iPhone 17 Pro / iOS 26.1 模拟器执行验证，**9 项核心测试与 8 项 UI 测试全部通过**。UI 测试使用独立的 UserDefaults 数据，不修改普通运行时的演示账户。覆盖 Confirm 左右边角点击与禁用状态、Proceed 和 Cancel 的文字外区域点击、持仓添加与编辑、去重、账户选择与对比、顶部导航、Global Investment View 及 App 内隐私政策。Confirm 的边角点击问题已在修复前复现，修复后验证通过。
+2026-09-10 验证通过 **57 项 iOS 核心测试**及 **46 项 macOS 独立核心测试**。iPhone 定向 UI 回归验证了首次关联从 3 个账户到 7 个、后台返回保留、冷启动重置后再次关联、防重复添加、实际 FUTU 截图导入、新加坡／香港参考组合切换，以及关联后的 GIV／YTD 页面。UI 测试使用独立本地存储，与正式运行采用相同的冷启动重置策略。
 
-本轮 iPhone 测试结果位于 `build/TestFlight/iPhone.xcresult`；此前的 GIV 验证结果保留在 `build/GIVRevision.xcresult`、`build/GIVVerified.xcresult` 和 `build/GIVFinal.xcresult`。这些结果包为本地验证产物，不提交到仓库。新版界面截图位于 `Screenshots/`，包括 `wealth.png`、`add-portfolio.png`、`accounts-sg.png`、`accounts-hk.png` 和 `giv-*.png`。
+最新 GIV 结果包位于 `build/FirstLaunch/GIV.xcresult`，核心、首次启动与导入测试日志位于 `build/FirstLaunch/`。这些产物不提交到仓库。`Screenshots/` 已更新新加坡／香港账户选择截图，展示完成关联后的账户列表。
 
 TestFlight 准备已通过 Xcode 26.2 / iOS SDK 26.2 的 **1.0.1 (2)** 未签名 Release 真机归档检查，确认隐私清单、加密声明和 iPad 四个方向已包含在产物中。隐私政策流程也已在 iPad Pro 11-inch (M5) / iOS 26.1 模拟器横屏验证通过，结果位于 `build/TestFlight/iPadVerified.xcresult`。签名、App Store Connect 上传校验及 Beta 审核仍需使用发布团队账号及 Apple 服务完成。
 

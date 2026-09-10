@@ -232,7 +232,7 @@ final class PortfolioTests: XCTestCase {
     }
     #endif
 
-    func testDefaultAccountsCoverBothMarketsAndAllAssetClasses() {
+    func testAccountCatalogCoversBothMarketsAndAllAssetClasses() {
         let accounts = SampleData.accounts
         XCTAssertEqual(accounts.count, 8)
         XCTAssertEqual(accounts.filter { $0.market == "Singapore" }.count, 4)
@@ -246,6 +246,161 @@ final class PortfolioTests: XCTestCase {
         XCTAssertEqual(Set(holdings.map(\.currency)), Set(Currency.allCases))
         XCTAssertTrue(holdings.allSatisfy { !($0.region ?? "").isEmpty && !($0.sector ?? "").isEmpty })
         XCTAssertTrue(holdings.allSatisfy { $0.quantity > 0 && $0.price > 0 && $0.averageCost > 0 })
+    }
+
+    func testNewDemoStartsWithOnlyTheThreeConfiguredHSBCAccounts() throws {
+        let suiteName = "wealthhub.first-launch." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let expectedIDs = [
+            "10000000-0000-4000-8000-000000000001",
+            "10000000-0000-4000-8000-000000000002",
+            "10000000-0000-4000-8000-000000000006"
+        ]
+        let store = PortfolioStore(defaults: defaults)
+        XCTAssertEqual(store.accounts.map { $0.id.uuidString }, expectedIDs)
+        XCTAssertEqual(store.accounts, SampleData.initialAccounts)
+        XCTAssertTrue(store.accounts.allSatisfy { $0.institution == "HSBC" })
+        XCTAssertEqual(store.accounts.map(\.market), ["Singapore", "Singapore", "Hong Kong"])
+        XCTAssertEqual(SampleData.linkableAccounts.map { $0.id.uuidString }, [
+            "10000000-0000-4000-8000-000000000003",
+            "10000000-0000-4000-8000-000000000004",
+            "10000000-0000-4000-8000-000000000007",
+            "10000000-0000-4000-8000-000000000008"
+        ])
+        XCTAssertTrue(Set(store.accounts.map(\.id)).isDisjoint(with: SampleData.linkableAccounts.map(\.id)))
+        let connectableBanks = SampleData.rows("banks").filter { $0.bool("portfolioEnabled") }.map { $0.string("name") }
+        for account in SampleData.linkableAccounts where account.institution.caseInsensitiveCompare("HSBC") != .orderedSame {
+            XCTAssertTrue(connectableBanks.contains { $0.caseInsensitiveCompare(account.institution) == .orderedSame },
+                          "\(account.institution) must be available in Connect to other bank so its account can be added for the first time.")
+        }
+        XCTAssertFalse((SampleData.initialAccounts + SampleData.linkableAccounts).contains {
+            $0.id.uuidString == "10000000-0000-4000-8000-000000000005"
+        }, "The extra Hong Kong current account stays outside the demo's initial and linking choices.")
+        XCTAssertEqual(PortfolioStore(defaults: defaults).accounts, store.accounts,
+                       "Creating a store again within the session reads the same local snapshot.")
+    }
+
+    #if canImport(UIKit)
+    func testLinkedAndScannedAccountsPersistLocallyUntilTheNextColdLaunch() throws {
+        let suiteName = "wealthhub.demo-session." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set("keep this setting", forKey: "unrelated.preference")
+        let store = PortfolioStore(defaults: defaults, startNewDemoSession: true)
+        for account in SampleData.linkableAccounts {
+            store.save(account)
+            store.save(account)
+        }
+        let extraction = try StatementExtractionService.parseStatementText(futuScreenshotOCRText)
+        let detected = try XCTUnwrap(extraction.account)
+        let imported = InvestmentAccount(name: detected.name, institution: detected.institution,
+                                         currency: detected.currency, colorIndex: 4,
+                                         market: detected.market ?? "Singapore", holdings: extraction.holdings,
+                                         accountNumber: detected.accountNumber)
+        store.save(imported)
+        var edited = try XCTUnwrap(store.accounts.first)
+        edited.name = "My current account"
+        edited.holdings[0].quantity += 250
+        store.save(edited)
+        store.currency = .USD
+        store.hideAmounts = true
+
+        let resumed = PortfolioStore(defaults: defaults)
+        XCTAssertEqual(resumed.accounts, store.accounts)
+        XCTAssertEqual(resumed.accounts.count, 8, "Relinking an account must not duplicate its stable identity.")
+        XCTAssertEqual(Set(resumed.accounts.map(\.id)).count, 8)
+        XCTAssertEqual(resumed.accounts.first { $0.id == imported.id }, imported)
+        XCTAssertEqual(resumed.accounts.first { $0.id == edited.id }, edited)
+        XCTAssertEqual(resumed.currency, .USD)
+        XCTAssertTrue(resumed.hideAmounts)
+        XCTAssertNotNil(defaults.data(forKey: "wealthhub.portfolio.v1"), "Confirmed accounts are saved locally during the session.")
+
+        let relaunched = PortfolioStore(defaults: defaults, startNewDemoSession: true)
+        XCTAssertEqual(relaunched.accounts, SampleData.initialAccounts)
+        XCTAssertEqual(relaunched.currency.rawValue, SampleData.setting("defaultCurrency"))
+        XCTAssertFalse(relaunched.hideAmounts)
+        XCTAssertNil(relaunched.storageError)
+        XCTAssertEqual(defaults.string(forKey: "unrelated.preference"), "keep this setting")
+        let savedReset = PortfolioStore(defaults: defaults)
+        XCTAssertEqual(savedReset.accounts, SampleData.initialAccounts,
+                       "Cold launch replaces the stored snapshot so a later read cannot resurrect linked or imported accounts.")
+        XCTAssertEqual(savedReset.currency, relaunched.currency)
+        XCTAssertFalse(savedReset.hideAmounts)
+    }
+    #endif
+
+    func testColdLaunchRestoresAnEmptyOrUnreadableDemoSnapshotWithoutClearingOtherSettings() throws {
+        let suiteName = "wealthhub.demo-reset." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(14, forKey: "unrelated.preference")
+        let store = PortfolioStore(defaults: defaults)
+        for account in store.accounts { store.deleteAccount(id: account.id) }
+        XCTAssertTrue(PortfolioStore(defaults: defaults).accounts.isEmpty,
+                      "Deleting accounts remains effective throughout the current session.")
+        XCTAssertEqual(PortfolioStore(defaults: defaults, startNewDemoSession: true).accounts, SampleData.initialAccounts)
+
+        defaults.set(Data("unreadable snapshot".utf8), forKey: "wealthhub.portfolio.v1")
+        let relaunched = PortfolioStore(defaults: defaults, startNewDemoSession: true)
+        XCTAssertEqual(relaunched.accounts, SampleData.initialAccounts)
+        XCTAssertNil(relaunched.storageError)
+        XCTAssertEqual(PortfolioStore(defaults: defaults).accounts, SampleData.initialAccounts)
+        XCTAssertEqual(defaults.integer(forKey: "unrelated.preference"), 14)
+    }
+
+    func testKnownBankConnectionDraftsUseConfiguredAccountsAndPreserveConfirmedEdits() throws {
+        let suiteName = "wealthhub.link-draft." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = PortfolioStore(defaults: defaults)
+        for bank in ["DBS", "Standard Chartered"] {
+            let configured = try XCTUnwrap(SampleData.linkableAccounts.first { $0.institution == bank })
+            let before = store.accounts
+            let draft = store.demoConnectionAccount(bank: bank)
+            XCTAssertEqual(draft, configured)
+            XCTAssertEqual(store.demoConnectionAccount(bank: bank.lowercased(), market: configured.market), draft)
+            XCTAssertEqual(store.accounts, before, "Reviewing or cancelling a connection draft must not add an account.")
+            XCTAssertEqual(PortfolioStore(defaults: defaults).accounts, before)
+
+            var confirmed = draft
+            confirmed.name = "My linked " + bank
+            confirmed.holdings[0].quantity += 10
+            store.save(confirmed)
+            let repeatedDraft = store.demoConnectionAccount(bank: bank)
+            XCTAssertEqual(repeatedDraft, confirmed, "Returning to the link flow must keep edits to an already connected account.")
+            store.save(repeatedDraft)
+            XCTAssertEqual(store.accounts.filter { $0.id == configured.id }.count, 1)
+            XCTAssertEqual(store.accounts.count, before.count + 1)
+        }
+    }
+
+    func testNewBankConnectionDraftUsesTheSelectedMarketAndResumesAfterConfirmation() throws {
+        let suiteName = "wealthhub.new-bank." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = PortfolioStore(defaults: defaults)
+        let before = store.accounts
+        let singapore = store.demoConnectionAccount(bank: "OCBC", market: "Singapore")
+        let hongKong = store.demoConnectionAccount(bank: "OCBC", market: "Hong Kong")
+        XCTAssertEqual(singapore.currency, .SGD)
+        XCTAssertEqual(hongKong.currency, .HKD)
+        XCTAssertEqual(singapore.market, "Singapore")
+        XCTAssertEqual(hongKong.market, "Hong Kong")
+        for draft in [singapore, hongKong] {
+            XCTAssertEqual(draft.institution, "OCBC")
+            XCTAssertTrue(draft.name.contains("OCBC"))
+            XCTAssertFalse(draft.holdings.isEmpty)
+            XCTAssertFalse(SampleData.accounts.contains { $0.id == draft.id })
+        }
+        XCTAssertEqual(store.accounts, before)
+        XCTAssertEqual(PortfolioStore(defaults: defaults).accounts, before)
+        store.save(singapore)
+        store.save(hongKong)
+        let resumed = PortfolioStore(defaults: defaults)
+        XCTAssertEqual(resumed.demoConnectionAccount(bank: "OCBC", market: "Singapore"), singapore)
+        XCTAssertEqual(resumed.demoConnectionAccount(bank: "OCBC", market: "Hong Kong"), hongKong)
+        XCTAssertEqual(resumed.accounts.count, before.count + 2)
     }
 
     func testCurrencyAmountsUseISOSuffixForFullAndCompactValues() {
@@ -404,6 +559,68 @@ final class PortfolioTests: XCTestCase {
             XCTAssertEqual(account.name, "My configurable, \"portfolio\"")
             XCTAssertEqual(holding.quantity, configuredQuantity)
             XCTAssertEqual(holding.value, configuredQuantity * originalHolding.price, accuracy: 0.001)
+        }
+    }
+
+    func testAccountAvailabilityCanBeConfiguredWithoutChangingTheCatalogOrHoldings() throws {
+        try withSampleDirectory { directory in
+            let original = try SampleCatalog.load(directory: directory)
+            try rewriteTable("Portfolios", in: directory) { rows in
+                let current = try XCTUnwrap(rows.firstIndex { $0["portfolioID"] == "hsbc-sg-current" && $0["purpose"] == "account" })
+                let unitTrust = try XCTUnwrap(rows.firstIndex { $0["portfolioID"] == "hsbc-sg-unit-trust" && $0["purpose"] == "account" })
+                rows[current]["availability"] = "linkable"
+                rows[unitTrust]["availability"] = "initial"
+            }
+            let configured = try SampleCatalog.load(directory: directory)
+            XCTAssertEqual(configured.accounts, original.accounts,
+                           "Availability controls the demo journey without deleting account or holding data from the catalog.")
+            XCTAssertEqual(configured.initialAccounts.map { $0.id.uuidString }, [
+                "10000000-0000-4000-8000-000000000002",
+                "10000000-0000-4000-8000-000000000003",
+                "10000000-0000-4000-8000-000000000006"
+            ])
+            XCTAssertEqual(configured.linkableAccounts.map { $0.id.uuidString }, [
+                "10000000-0000-4000-8000-000000000001",
+                "10000000-0000-4000-8000-000000000004",
+                "10000000-0000-4000-8000-000000000007",
+                "10000000-0000-4000-8000-000000000008"
+            ])
+        }
+    }
+
+    func testAccountAvailabilityRejectsInvalidValuesAndAnEmptyInitialPortfolio() throws {
+        var changes: [(inout [[String: String]]) -> Void] = [
+            { $0[0]["availability"] = "" },
+            { $0[0]["availability"] = "automatically-linked" },
+            { $0[1]["availability"] = "linkable" },
+            { rows in
+                let index = rows.firstIndex { $0["portfolioID"] == "statement-review" }!
+                rows[index]["availability"] = "initial"
+            },
+            { rows in
+                let index = rows.firstIndex { $0["portfolioID"] == "statement-preview" }!
+                rows[index]["availability"] = "initial"
+            },
+            { rows in
+                for index in rows.indices where rows[index]["purpose"] == "account" {
+                    rows[index]["availability"] = "linkable"
+                }
+            }
+        ]
+        for unavailableDefault in ["linkable", "hidden"] {
+            changes.append { rows in
+                let index = rows.firstIndex { $0["accountID"] == SampleData.setting("defaultAccountID") }!
+                rows[index]["availability"] = unavailableDefault
+            }
+        }
+        for change in changes {
+            try withSampleDirectory { directory in
+                try rewriteTable("Portfolios", in: directory, update: change)
+                XCTAssertThrowsError(try SampleCatalog.load(directory: directory)) { error in
+                    XCTAssertTrue(error.localizedDescription.contains("availability") || error.localizedDescription.contains("initial account"),
+                                  error.localizedDescription)
+                }
+            }
         }
     }
 
@@ -714,10 +931,10 @@ final class PortfolioTests: XCTestCase {
         XCTAssertEqual(reopened.currency, .USD)
         XCTAssertTrue(reopened.hideAmounts)
         reopened.reset()
-        XCTAssertEqual(reopened.accounts, SampleData.accounts)
+        XCTAssertEqual(reopened.accounts, SampleData.initialAccounts)
         XCTAssertEqual(reopened.currency.rawValue, SampleData.setting("defaultCurrency"))
         XCTAssertFalse(reopened.hideAmounts)
-        XCTAssertEqual(PortfolioStore(defaults: defaults).accounts, SampleData.accounts)
+        XCTAssertEqual(PortfolioStore(defaults: defaults).accounts, SampleData.initialAccounts)
     }
 
     func testPerformanceConfigurationRejectsIndependentReferenceReturns() throws {

@@ -20,7 +20,10 @@ struct AddPortfolioSheet: View {
     @State private var completed = false
 
     private var hsbcAccounts: [InvestmentAccount] {
-        store.accounts.filter { $0.institution.localizedCaseInsensitiveContains("HSBC") }
+        let linkedIDs = Set(store.accounts.map(\.id))
+        return SampleData.linkableAccounts.filter {
+            $0.institution.localizedCaseInsensitiveContains("HSBC") && !linkedIDs.contains($0.id)
+        }
     }
 
     var body: some View {
@@ -123,7 +126,7 @@ struct AddPortfolioSheet: View {
         switch step {
         case .hsbc:
             GlobalHSBCSelection(accounts: hsbcAccounts, selection: $selectedHSBC) {
-                finish(ids: selectedHSBC.intersection(Set(hsbcAccounts.map(\.id))))
+                finish(accounts: hsbcAccounts.filter { selectedHSBC.contains($0.id) })
             }
         case .bank:
             OtherBankPortfolioConnection { account in finish(account: account) }
@@ -173,12 +176,13 @@ struct AddPortfolioSheet: View {
         .accessibilityIdentifier("portfolio.add.\(id)")
     }
 
-    private func finish(ids: Set<UUID> = [], account: InvestmentAccount? = nil) {
+    private func finish(accounts: [InvestmentAccount] = [], account: InvestmentAccount? = nil) {
         guard !completed else { return }
-        let included = account.map { Set([$0.id]) } ?? ids
+        let additions = account.map { [$0] } ?? accounts
+        let included = Set(additions.map(\.id))
         guard !included.isEmpty else { return }
         completed = true
-        if let account { store.save(account) }
+        for account in additions { store.save(account) }
         onComplete(included)
         dismiss()
     }
@@ -204,10 +208,10 @@ private struct GlobalHSBCSelection: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Add your global HSBC accounts")
                     .font(.system(size: 25, weight: .light))
-                Text("Select the accounts you’d like to include in your wealth analysis.")
+                Text("Link more HSBC accounts to include them in your wealth analysis.")
                     .font(.system(size: 15)).foregroundStyle(Theme.muted).lineSpacing(4)
                 if accounts.isEmpty {
-                    EmptyPortfolio(title: "No HSBC accounts available", message: "You can add another bank account or upload a statement from the previous screen.")
+                    EmptyPortfolio(title: "All HSBC accounts are linked", message: "Your available HSBC accounts have been added. You can connect another bank or upload a statement from the previous screen.")
                 } else {
                     ForEach(accounts) { account in
                         Button {
@@ -230,7 +234,7 @@ private struct GlobalHSBCSelection: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityAddTraits(selection.contains(account.id) ? .isSelected : [])
-                        .accessibilityIdentifier("portfolio.hsbc.account.\(account.market)")
+                        .accessibilityIdentifier("portfolio.hsbc.account.\(account.id.uuidString)")
                         Divider()
                     }
                 }
@@ -248,6 +252,7 @@ private struct GlobalHSBCSelection: View {
 }
 
 private struct OtherBankPortfolioConnection: View {
+    @Environment(PortfolioStore.self) private var store
     var onComplete: (InvestmentAccount) -> Void
     @State private var bankID = SampleData.setting("defaultBankID")
     @State private var consent = false
@@ -325,10 +330,7 @@ private struct OtherBankPortfolioConnection: View {
     }
 
     private func sampleAccount() -> InvestmentAccount {
-        var account = SampleData.makeAccount(template: "bank-connection")
-        account.institution = bank
-        account.name = account.name.replacingOccurrences(of: "{bank}", with: bank)
-        return account
+        store.demoConnectionAccount(bank: bank)
     }
 }
 

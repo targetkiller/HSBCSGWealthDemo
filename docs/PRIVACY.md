@@ -16,7 +16,7 @@ Portfolio calculations and the demo's generated analysis run locally. The app do
 
 ## Retention and deletion
 
-Saved portfolios remain on your device until you remove them, restore the original demo data in Settings, or uninstall the app. You can also change camera and photo permissions in iOS Settings.
+Saved portfolios and preferences remain on your device during the current app session, including while the app is in the background. Fully closing and reopening the app replaces them with the initial demo accounts, allowing you to repeat the first-time linking and import experience. You can also remove accounts or restore demo data in Settings. Camera and photo permissions can be changed in iOS Settings.
 
 ## External services
 

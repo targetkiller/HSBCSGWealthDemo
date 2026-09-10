@@ -7,11 +7,10 @@ struct WealthHubApp: App {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--uitesting") {
             let defaults = UserDefaults(suiteName: "wealthhub.ui-tests")!
-            defaults.removePersistentDomain(forName: "wealthhub.ui-tests")
-            return PortfolioStore(defaults: defaults)
+            return PortfolioStore(defaults: defaults, startNewDemoSession: true)
         }
         #endif
-        return PortfolioStore()
+        return PortfolioStore(startNewDemoSession: true)
     }()
     var body: some Scene {
         WindowGroup {

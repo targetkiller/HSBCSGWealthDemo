@@ -155,7 +155,7 @@ struct SampleCatalog {
         do { text = try String(contentsOf: directory.appendingPathComponent(source), encoding: .utf8) }
         catch { throw SampleConfigurationError(message: "\(source): Cannot read the UTF-8 portfolio configuration. \(error.localizedDescription)") }
         let records = try SampleCSV.parse(text, source: source)
-        let columns = "portfolioID,purpose,name,bank,market,currency,portfolioValue,holdingName,symbol,category,holdingCurrency,quantity,price,averageCost,holdingValue,region,sector,accountNumber,note,colorIndex,accountID,holdingID,holdingsFrom".components(separatedBy: ",")
+        let columns = "portfolioID,purpose,name,bank,market,currency,portfolioValue,holdingName,symbol,category,holdingCurrency,quantity,price,averageCost,holdingValue,region,sector,accountNumber,note,colorIndex,accountID,holdingID,holdingsFrom,availability".components(separatedBy: ",")
         guard let first = records.first else { throw SampleConfigurationError(message: "Portfolios.csv: At least one portfolio is required.") }
         guard Set(first.values.keys) == Set(columns) else { throw first.error("Expected columns: \(columns.joined(separator: ",")).") }
         var groupOrder: [String] = [], groups: [String: [SampleRecord]] = [:]
@@ -165,7 +165,7 @@ struct SampleCatalog {
             if groups[groupID] == nil { groupOrder.append(groupID) }
             groups[groupID, default: []].append(record)
         }
-        let metadata = ["purpose", "name", "bank", "market", "currency", "portfolioValue", "accountNumber", "note", "colorIndex", "accountID", "holdingsFrom"]
+        let metadata = ["purpose", "name", "bank", "market", "currency", "portfolioValue", "accountNumber", "note", "colorIndex", "accountID", "holdingsFrom", "availability"]
         let holdingFields = ["holdingName", "symbol", "category", "holdingCurrency", "quantity", "price", "averageCost", "holdingValue", "region", "sector", "holdingID"]
         var tables: [String: [SampleRecord]] = ["accounts": [], "account_templates": [], "holdings": []]
         for groupID in groupOrder {
@@ -183,6 +183,12 @@ struct SampleCatalog {
             let owner = group.first { !$0.string("purpose").isEmpty } ?? group[0]
             let purpose = info["purpose"] ?? ""
             guard ["account", "template", "holdings"].contains(purpose) else { throw owner.error("Portfolio '\(groupID)' needs purpose account, template or holdings.") }
+            let availability = info["availability"] ?? ""
+            if purpose == "account" {
+                guard ["initial", "linkable", "hidden"].contains(availability) else { throw owner.error("Account availability must be initial, linkable or hidden.") }
+            } else {
+                guard availability.isEmpty else { throw owner.error("availability is only for account groups; leave it blank for templates and holdings-only groups.") }
+            }
             var hasHoldings = false
             for record in group where holdingFields.contains(where: { !record.string($0).isEmpty }) {
                 hasHoldings = true
@@ -207,10 +213,11 @@ struct SampleCatalog {
             }
             if purpose == "template", !(info["accountID"] ?? "").isEmpty { throw owner.error("Templates create fresh IDs; leave accountID blank.") }
             let id = purpose == "account" ? (info["accountID"]?.nilIfEmpty ?? stableID(["account", groupID])) : groupID
-            let values = ["id": id, "portfolioID": groupID, "name": info["name"] ?? "", "institution": info["bank"] ?? "", "currency": info["currency"] ?? "", "colorIndex": info["colorIndex"]?.nilIfEmpty ?? "0", "note": info["note"] ?? "", "market": info["market"] ?? "", "accountNumber": info["accountNumber"] ?? "", "holdingsSet": holdingSource.isEmpty ? (hasHoldings ? groupID : "") : holdingSource, "portfolioValue": info["portfolioValue"] ?? ""]
+            let values = ["id": id, "portfolioID": groupID, "name": info["name"] ?? "", "institution": info["bank"] ?? "", "currency": info["currency"] ?? "", "colorIndex": info["colorIndex"]?.nilIfEmpty ?? "0", "note": info["note"] ?? "", "market": info["market"] ?? "", "accountNumber": info["accountNumber"] ?? "", "holdingsSet": holdingSource.isEmpty ? (hasHoldings ? groupID : "") : holdingSource, "portfolioValue": info["portfolioValue"] ?? "", "availability": availability]
             tables[purpose == "account" ? "accounts" : "account_templates"]!.append(SampleRecord(values: values, lineNumber: owner.lineNumber, source: source))
         }
         guard !tables["accounts"]!.isEmpty else { throw first.error("At least one group with purpose account is required.") }
+        guard tables["accounts"]!.contains(where: { $0.string("availability") == "initial" }) else { throw first.error("At least one account must have availability initial.") }
         guard !tables["account_templates"]!.isEmpty, !tables["holdings"]!.isEmpty else { throw first.error("Required template and sample holding groups are missing.") }
         return tables
     }
@@ -220,6 +227,12 @@ struct SampleCatalog {
     func setting(_ key: String) -> String { row("settings", id: key).string("value") }
 
     var accounts: [InvestmentAccount] { rows("accounts").map { account(from: $0, id: UUID(uuidString: $0.id)!, freshHoldings: false) } }
+    var initialAccounts: [InvestmentAccount] { accounts(availableAs: "initial") }
+    var linkableAccounts: [InvestmentAccount] { accounts(availableAs: "linkable") }
+    private func accounts(availableAs availability: String) -> [InvestmentAccount] {
+        rows("accounts").filter { $0.string("availability") == availability }
+            .map { account(from: $0, id: UUID(uuidString: $0.id)!, freshHoldings: false) }
+    }
     func makeAccount(template: String, currency: Currency? = nil) -> InvestmentAccount { account(from: row("account_templates", id: template), id: UUID(), freshHoldings: true, currencyOverride: currency) }
     func holdings(in setID: String) -> [Holding] { holdings(in: setID, freshIDs: true) }
 
@@ -395,7 +408,10 @@ struct SampleCatalog {
             guard let row = rows("settings").first(where: { $0.id == key }) else { throw SampleConfigurationError(message: "Others/settings.csv: Missing setting '\(key)'.") }
             try nonempty(row, "value")
         }
-        try require(UUID(uuidString: setting("defaultAccountID")) != nil, row("settings", id: "defaultAccountID"), "defaultAccountID must be a UUID. If that account is removed, the first configured account is used.")
+        try require(UUID(uuidString: setting("defaultAccountID")) != nil, row("settings", id: "defaultAccountID"), "defaultAccountID must be a UUID. If that account is removed, the first initial account is used.")
+        if let defaultAccount = rows("accounts").first(where: { $0.id.caseInsensitiveCompare(setting("defaultAccountID")) == .orderedSame }) {
+            try require(defaultAccount.string("availability") == "initial", row("settings", id: "defaultAccountID"), "defaultAccountID must identify an initial account.")
+        }
         for (key, allowed) in [("defaultCurrency", currencies), ("defaultBankID", ids("banks")), ("defaultMarketID", ids("markets")), ("defaultWealthScenarioID", ids("wealth_scenarios"))] {
             try reference(row("settings", id: key), "value", allowed)
         }
@@ -505,7 +521,11 @@ struct SampleCatalog {
 }
 
 enum SampleData {
+    #if SWIFT_PACKAGE
+    static let directory = Bundle.module.resourceURL!.appendingPathComponent("Sample", isDirectory: true)
+    #else
     static let directory = Bundle.main.resourceURL!.appendingPathComponent("Sample", isDirectory: true)
+    #endif
     static let result = Result { try SampleCatalog.load(directory: directory) }
     static var configurationError: String? {
         if case .failure(let error) = result { return error.localizedDescription }
@@ -518,8 +538,10 @@ enum SampleData {
         }
     }
     static var accounts: [InvestmentAccount] { catalog.accounts }
+    static var initialAccounts: [InvestmentAccount] { catalog.initialAccounts }
+    static var linkableAccounts: [InvestmentAccount] { catalog.linkableAccounts }
     static func defaultAccount(in savedAccounts: [InvestmentAccount]) -> InvestmentAccount? {
-        let configured = accounts.first { $0.id.uuidString.caseInsensitiveCompare(setting("defaultAccountID")) == .orderedSame } ?? accounts[0]
+        let configured = initialAccounts.first { $0.id.uuidString.caseInsensitiveCompare(setting("defaultAccountID")) == .orderedSame } ?? initialAccounts[0]
         // Earlier app versions used random IDs; their migration preserves those IDs and user edits.
         return savedAccounts.first { $0.id == configured.id }
             ?? savedAccounts.first {

@@ -17,11 +17,12 @@ Sample/
 
 每一行是一项持仓，相同 `portfolioID` 的行属于同一个账户或组合。每组第一行填写账户信息，后续行的账户字段可以留空；每行都要保留 `portfolioID`。即使排序后行不相邻，也会归到同一组合；同一组若重复填写账户信息，内容必须一致。
 
-先筛选 `purpose=account` 找到默认账户所在的组合，再按其 `portfolioID` 查看全部持仓。后续持仓行的 `purpose` 留空是正常的，不代表它们被停用。
+先筛选 `purpose=account` 找到账户目录，再查看 `availability` 区分初始账户和后续可添加账户。按其 `portfolioID` 查看全部持仓。后续持仓行的 `purpose` 和 `availability` 留空是正常的，不代表它们被停用。
 
 | 要改什么 | 编辑的列 | 示例 / 单位 |
 | --- | --- | --- |
 | 账户名称、银行、市场 | `name`、`bank`、`market` | 在该组合的账户信息行填写 |
+| 账户出现时机 | `availability` | `initial` 初始显示、`linkable` 后续添加、`hidden` 仅保留配置 |
 | 账户展示币种 | `currency` | `SGD`、`USD`、`HKD` 或 `CNY` |
 | 整个组合的目标市值 | `portfolioValue` | `500000`，单位为账户的 `currency` |
 | 持仓名称、代码、类别 | `holdingName`、`symbol`、`category` | 证券代码按文本保存，保留前导零 |
@@ -30,6 +31,16 @@ Sample/
 | 持仓币种、地区、行业 | `holdingCurrency`、`region`、`sector` | 控制换算和分析图表中的分类 |
 
 金额只填数字，不加货币符号、千位逗号或 `SGD` 后缀。例如填 `500000`，不要填 `500,000 SGD`。保留现有 `portfolioID`、`accountID`、`holdingID`；修改显示名称不需要修改这些 ID。
+
+## 每次启动的演示账户
+
+每次完全退出 App 后重新启动，都会开始新的演示，恢复以下 3 个 `initial` 账户：Singapore 的 HSBC Current Account、Equity Investment Account，以及 Hong Kong 的 HSBC One Investment Services。
+
+- `linkable`：Singapore 的 Unit Trust Investment Account、Hong Kong 的 HSBC One FundMax Account，留给 **Link my accounts** 添加；DBS 和 Standard Chartered 留给 **Connect to other banks** 添加。
+- `hidden`：Hong Kong 的 HSBC Current Account 仅保留在完整配置目录中，用于旧数据兼容，不显示为初始账户或可链接账户。
+- 扫描或上传创建的 FUTU 等账户、链接账户以及持仓编辑会在本次演示中保存到本机。切到后台再返回会继续当前状态；kill 后重新打开则恢复初始账户，重新体验首次添加。
+
+只有 `purpose=account` 的组填写 `availability`，每组必须是 `initial`、`linkable` 或 `hidden`；模板和独立持仓组留空。至少保留一个初始账户，`Others/settings.csv` 中的 `defaultAccountID` 若仍在目录内，必须指向初始账户。
 
 ## 三个常用修改
 
@@ -52,13 +63,13 @@ Sample/
    ./scripts/sample-data.sh summary
    ```
 
-4. 确认数据后，重新构建并安装 App。新安装会读取默认账户；已有安装会保留已保存的数据。要应用新的默认账户，在 **Menu → Settings → Restore demo data** 中确认恢复，此操作会替换本机已有的账户、持仓及编辑内容。
+4. 确认数据后，重新构建并安装 App。新安装和已有安装都会在进程重新启动时读取初始账户，并清除上次演示保存的账户、持仓及编辑内容。也可以在 **Menu → Settings → Restore demo data** 中立即恢复，无需重启。
 
 CSV 是打包到 App 的资源，修改电脑上的文件不会直接更新已安装 App 或 TestFlight。配置错误会显示具体文件和字段信息，修复后再构建即可。目标价值只用于生成配置中的示例数据，不会重新缩放用户已保存的持仓或真实账单导入结果。
 
 ## 新增账户或持仓
 
-- **新增账户**：复制现有账户的整组行，给它们填写同一个新的 `portfolioID`，修改账户信息和持仓，清空复制过来的 `accountID` 与 `holdingID`。系统会根据新组合标识与持仓信息生成稳定 ID。
+- **新增账户**：复制现有账户的整组行，给它们填写同一个新的 `portfolioID`，修改账户信息和持仓，设置 `availability`，清空复制过来的 `accountID` 与 `holdingID`。系统会根据新组合标识与持仓信息生成稳定 ID。
 - **新增持仓**：在新行填写所属的 `portfolioID` 和持仓信息，账户字段、`accountID`、`holdingID` 可以留空。新持仓的默认 ID 根据组合标识、证券代码、币种和类别生成；同一组合要分别记录同代码、同币种、同类别的多笔持仓时，需要为每笔填写不同的 UUID `holdingID`。
 
 已有行的 ID 不要清空或更换。新增完成后运行校验；默认选中账户等高级关联配置在 [Others/](Others/README.md)。
@@ -67,8 +78,8 @@ CSV 是打包到 App 的资源，修改电脑上的文件不会直接更新已�
 
 同一张表还包含新增账户与导入演示的配置，按 `purpose` 区分：
 
-- `account`：首次运行或 Restore demo data 后显示的默认账户。
-- `template`：新增账户时使用的模板；`bank-connection` 是 Other bank account 的演示持仓，`linked-account` 是菜单新增账户模板，`statement-review` 和 `statement-import` 提供导入账户信息。
+- `account`：完整账户目录；用 `availability` 控制初始显示、后续添加或隐藏。
+- `template`：新增账户时使用的备用模板；连接银行时优先读取对应 `linkable` 账户，未配置对应账户才使用 `bank-connection`。`linked-account` 保留为可复用的账户模板，`statement-review` 和 `statement-import` 提供导入账户信息。
 - `holdings`：独立样例持仓；`statement-preview` 用于 Wealth 的 8 项账单预览，`csv-import` 用于菜单内的 2 项 CSV 示例，`csv-file-export` 用于导出 4 项持仓的测试账单。
 
 模板名称中的 `{bank}`、备注中的 `{source}` 会在使用时替换。`holdingsFrom` 表示复用另一组持仓，例如 `linked-account` 复用 `hsbc-sg-unit-trust`；需要调整它使用的持仓时，编辑来源组。复用会包含来源持仓的 `holdingValue` 调整，但不会继承来源账户的 `portfolioValue`：模板可以设置自己的组合目标。菜单新增账户时，该目标按最终所选市场的账户币种计算，例如选择香港后按 HKD 计算。新增模板账户会生成独立 ID，不会覆盖默认账户。
@@ -87,16 +98,19 @@ CSV 是打包到 App 的资源，修改电脑上的文件不会直接更新已�
 
 Edit **[Portfolios.csv](Portfolios.csv)** for all default accounts, holdings, account templates, and portfolio values. Other settings, including exchange rates and scenario assumptions, live in **[Others/](Others/README.md)**.
 
+Every cold launch starts a fresh demo with three HSBC accounts: Singapore Current, Singapore Equity Investment, and Hong Kong One Investment Services. New links, imports, and edits are saved locally during that session and survive background/foreground transitions. After the app is killed, the next launch replaces that saved session with the initial accounts.
+
 Rows sharing a `portfolioID` belong to one group. Fill account metadata on its first row and leave those cells blank on subsequent rows; retain `portfolioID` on every row. Grouping uses the ID even after sorting. Any repeated nonempty metadata must agree.
 
 - Change `name`, `bank`, `market`, or `accountNumber` to edit account details.
+- Set account-only `availability` to `initial`, `linkable`, or `hidden`. The SG Unit Trust, HK FundMax, DBS, and Standard Chartered accounts are linkable later; HK Current remains hidden for compatibility. Leave availability blank on templates and standalone holdings. Keep at least one initial account and point `defaultAccountID` to an initial account if it still exists in the catalog.
 - Change `quantity`, `price`, and `averageCost` for a holding, or enter `holdingValue` in its `holdingCurrency` to derive quantity from value ÷ price. Quantity may then be blank; a positive target requires a positive price.
 - Enter `portfolioValue` in the account's `currency` to set total market value. After individual holding overrides, all quantities scale proportionally to this total. Prices and average costs stay unchanged. Leave it blank to calculate the total from holdings; zero sets all quantities to zero. A positive target requires a nonzero starting portfolio value.
 
 When both value overrides are set, the portfolio target applies last, so individual holding values may change again. This affects configured demo data only; saved user accounts and real statement imports are not rescaled.
 
-Import IDs, account numbers, and symbols as text in Excel or Numbers. Preserve existing IDs and leading zeroes, use plain decimal numbers, and export UTF-8 CSV with the original header. Run `./scripts/sample-data.sh validate` and `./scripts/sample-data.sh summary`, then rebuild and install. On an existing installation, **Menu → Settings → Restore demo data** replaces saved accounts and holdings with the bundled defaults; rebuilding alone preserves saved data.
+Import IDs, account numbers, and symbols as text in Excel or Numbers. Preserve existing IDs and leading zeroes, use plain decimal numbers, and export UTF-8 CSV with the original header. Run `./scripts/sample-data.sh validate` and `./scripts/sample-data.sh summary`, then rebuild and install. Every new app process loads the bundled initial accounts. **Menu → Settings → Restore demo data** also resets the current session immediately.
 
 For a new account, copy a group, assign a new `portfolioID`, and clear copied `accountID` and `holdingID` values. For a new holding, add its position fields and the destination `portfolioID`; leave `holdingID` blank. New blank IDs are generated deterministically. Duplicate lots with the same symbol, currency, and category in one portfolio require distinct explicit UUIDs. Preserve IDs on existing rows.
 
-`purpose=account` denotes defaults, `template` denotes new-account templates, and `holdings` denotes standalone statement samples. `holdingsFrom` copies the source positions including their `holdingValue` adjustments, but does not inherit the source account's `portfolioValue`. Each template has its own optional total target, measured in the account's final currency after market selection. See [Others/README.md](Others/README.md) for structural fields and advanced settings.
+`purpose=account` denotes the full account catalog with availability controlling when accounts appear; `template` denotes new-account templates, and `holdings` denotes standalone statement samples. `holdingsFrom` copies the source positions including their `holdingValue` adjustments, but does not inherit the source account's `portfolioValue`. Each template has its own optional total target, measured in the account's final currency after market selection. See [Others/README.md](Others/README.md) for structural fields and advanced settings.

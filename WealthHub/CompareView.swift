@@ -79,7 +79,7 @@ struct SettingsView: View {
         @Bindable var store = store
         Form {
             Section("Display") { Picker("Reporting currency", selection: $store.currency) { ForEach(Currency.allCases) { Text($0.rawValue).tag($0) } }; Toggle("Hide balances", isOn: $store.hideAmounts) }
-            Section("About this demo") { LabeledContent("Version", value: appVersion).accessibilityIdentifier("settings.version"); LabeledContent("Accounts", value: String(store.accounts.count)); LabeledContent("Holdings", value: String(store.holdingCount)); Text("Built from the Wealth Hub Figma concepts. All bank connections and analysis are illustrative. Account changes are saved locally.").font(.footnote).foregroundStyle(Theme.muted) }
+            Section("About this demo") { LabeledContent("Version", value: appVersion).accessibilityIdentifier("settings.version"); LabeledContent("Accounts", value: String(store.accounts.count)); LabeledContent("Holdings", value: String(store.holdingCount)); Text("Built from the Wealth Hub Figma concepts. All bank connections and analysis are illustrative. Changes are saved locally for this session. Fully close and reopen the app to start again with the initial HSBC accounts.").font(.footnote).foregroundStyle(Theme.muted) }
             Section {
                 NavigationLink("Privacy policy") { DemoPrivacyPolicyView() }
                     .accessibilityIdentifier("settings.privacy")
@@ -105,7 +105,7 @@ private struct DemoPrivacyPolicyView: View {
                 Text("Portfolio calculations and generated demo analysis run locally, without a remote AI service.")
             }
             Section("Retention and deletion") {
-                Text("Saved portfolios remain until you remove them, restore the original demo data in Settings, or uninstall the app. Camera and photo permissions can be changed in iOS Settings.")
+                Text("Saved portfolios and preferences remain during the current app session, including while the app is in the background. Fully closing and reopening the app replaces them with the initial demo accounts. You can also remove accounts or restore demo data in Settings. Camera and photo permissions can be changed in iOS Settings.")
             }
             Section("External services") {
                 Text("Apple distributes TestFlight builds and may collect beta feedback or diagnostics under its own terms. The project's GitHub support page follows GitHub's privacy policy. These services are separate from the demo's local portfolio storage.")

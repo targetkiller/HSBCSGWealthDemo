@@ -18,9 +18,16 @@ final class PortfolioStore {
         var seedVersion: Int? = nil
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, startNewDemoSession: Bool = false) {
         self.defaults = defaults
-        if let data = defaults.data(forKey: key), let saved = try? JSONDecoder().decode(Snapshot.self, from: data) {
+        if startNewDemoSession {
+            // The app starts this session once per process. In-session edits and imports
+            // still persist locally; returning from the background keeps this store alive.
+            accounts = SampleData.initialAccounts
+            currency = Currency(rawValue: SampleData.setting("defaultCurrency"))!
+            hideAmounts = false
+            persist()
+        } else if let data = defaults.data(forKey: key), let saved = try? JSONDecoder().decode(Snapshot.self, from: data) {
             accounts = saved.accounts
             currency = saved.currency
             hideAmounts = saved.hideAmounts
@@ -29,7 +36,7 @@ final class PortfolioStore {
                 persist()
             }
         } else {
-            accounts = SampleData.accounts
+            accounts = SampleData.initialAccounts
             currency = Currency(rawValue: SampleData.setting("defaultCurrency"))!
             hideAmounts = false
             if defaults.data(forKey: key) != nil { storageError = "本地数据无法读取，已载入演示数据。原始存储尚未覆盖。" }
@@ -60,6 +67,30 @@ final class PortfolioStore {
         persist()
     }
 
+    /// Prepare a connection draft. Only the caller's confirmation saves it locally.
+    func demoConnectionAccount(bank: String, market: String? = nil) -> InvestmentAccount {
+        let matches: (InvestmentAccount) -> Bool = { account in
+            account.institution.localizedCaseInsensitiveCompare(bank) == .orderedSame &&
+                (market.map { account.market.localizedCaseInsensitiveCompare($0) == .orderedSame } ?? true)
+        }
+        if let configured = SampleData.linkableAccounts.first(where: matches) {
+            return accounts.first { $0.id == configured.id } ?? configured
+        }
+        if let existing = accounts.first(where: matches) { return existing }
+
+        let selectedMarket = market.flatMap { name in
+            SampleData.rows("markets").first { $0.string("name").localizedCaseInsensitiveCompare(name) == .orderedSame }
+        }
+        let currency = selectedMarket.flatMap { Currency(rawValue: $0.string("currency")) }
+        var account = SampleData.makeAccount(template: "bank-connection", currency: currency)
+        account.name = account.name.replacingOccurrences(of: "{bank}", with: bank)
+        account.institution = bank
+        if let selectedMarket { account.market = selectedMarket.string("name") }
+        else if let market { account.market = market }
+        account.colorIndex = accounts.count
+        return account
+    }
+
     func deleteAccount(id: UUID) { accounts.removeAll { $0.id == id }; persist() }
     func saveHolding(_ holding: Holding, accountID: UUID) {
         guard let index = accounts.firstIndex(where: { $0.id == accountID }) else { return }
@@ -72,7 +103,7 @@ final class PortfolioStore {
         accounts[index].holdings.removeAll { $0.id == id }
         persist()
     }
-    func reset() { accounts = SampleData.accounts; currency = Currency(rawValue: SampleData.setting("defaultCurrency"))!; hideAmounts = false; persist() }
+    func reset() { accounts = SampleData.initialAccounts; currency = Currency(rawValue: SampleData.setting("defaultCurrency"))!; hideAmounts = false; persist() }
 
     private static func migrateDefaultAccounts(_ saved: [InvestmentAccount]) -> [InvestmentAccount] {
         // An intentionally cleared portfolio must stay empty, including on its first upgrade.

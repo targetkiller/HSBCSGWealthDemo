@@ -10,6 +10,7 @@ final class WealthHubUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         var app = launch()
         if ProcessInfo.processInfo.environment["APP_STORE_SCREENSHOT_PAGE"] == "compare" {
+            linkAllAvailableDemoAccounts(in: app)
             captureAppStoreComparison(in: app)
             return
         }
@@ -33,6 +34,7 @@ final class WealthHubUITests: XCTestCase {
 
         app.terminate()
         app = launch()
+        linkAllAvailableDemoAccounts(in: app)
         app.buttons["wealth.viewDetails"].tap()
         XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 5))
         app.buttons["giv.accounts"].tap()
@@ -55,6 +57,7 @@ final class WealthHubUITests: XCTestCase {
         // while it is under the navigation bar. Reopen at the top instead.
         app.terminate()
         app = launch()
+        linkAllAvailableDemoAccounts(in: app)
         app.buttons["wealth.viewDetails"].tap()
         XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 5))
         app.buttons["giv.accounts"].tap()
@@ -67,6 +70,7 @@ final class WealthHubUITests: XCTestCase {
 
         app.terminate()
         app = launch()
+        linkAllAvailableDemoAccounts(in: app)
         captureAppStoreComparison(in: app)
     }
 
@@ -434,23 +438,49 @@ final class WealthHubUITests: XCTestCase {
         openAddPortfolio(in: app)
         includeGlobalHSBCAccounts(in: app)
 
-        // Add the same existing accounts again; the portfolio should still contain two HSBC accounts.
-        let addHoldings = app.buttons["portfolio.addHoldings"]
-        scrollUntilHittable(addHoldings, in: app)
-        if addHoldings.frame.maxY > app.frame.height * 0.75 { app.swipeUp() }
-        addHoldings.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // Linked accounts disappear from the list of accounts still available to add.
+        openAddPortfolio(in: app)
+        app.buttons["portfolio.add.hsbc"].tap()
+        let confirm = app.buttons["portfolio.hsbc.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        XCTAssertFalse(confirm.isEnabled)
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "portfolio.hsbc.account.")).count, 0)
+        app.navigationBars["Global HSBC accounts"].buttons["portfolio.add.close"].tap()
+        XCTAssertTrue(app.buttons["banking.tab.wealth"].waitForExistence(timeout: 5))
+        assertAccountInventory(singapore: [1, 2, 3], hongKong: [6, 7], in: app)
+    }
+
+    func testDemoAccountsLinkDuringSessionAndResetOnlyAfterColdLaunch() throws {
+        let app = launch()
+        assertAccountInventory(singapore: [1, 2], hongKong: [6], in: app)
+        linkAllAvailableDemoAccounts(in: app)
+        assertAccountInventory(singapore: [1, 2, 3, 4], hongKong: [6, 7, 8], in: app)
+        attachScreenshot(app, name: "Seven demo accounts linked during the current session")
+
+        XCUIDevice.shared.press(.home)
+        let backgrounded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.state == .runningBackground || app.state == .runningBackgroundSuspended
+        }, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [backgrounded], timeout: 5), .completed)
+        app.activate()
+        XCTAssertTrue(app.buttons["banking.tab.wealth"].waitForExistence(timeout: 5))
+        assertAccountInventory(singapore: [1, 2, 3, 4], hongKong: [6, 7, 8], in: app)
+
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["banking.tab.wealth"].waitForExistence(timeout: 10))
+        assertAccountInventory(singapore: [1, 2], hongKong: [6], in: app)
+        let generate = app.buttons["portfolio.analysis.generate"]
+        scrollUntilHittable(generate, in: app)
+        XCTAssertTrue(generate.isEnabled, "A new launch must make the first analysis and add-account flow available again.")
+        openAddPortfolio(in: app)
         includeGlobalHSBCAccounts(in: app)
-        scrollUntilHittable(app.buttons["accountSelector"], in: app, upwards: false)
-        XCTAssertTrue(app.staticTexts["6 accounts selected"].exists)
-        app.buttons["accountSelector"].tap()
-        XCTAssertTrue(app.staticTexts["accountSelector.title"].waitForExistence(timeout: 3))
-        XCTAssertEqual(app.buttons.containing(.staticText, identifier: "(068) Equity Investment Account").count, 1)
-        app.buttons["Hong Kong"].tap()
-        XCTAssertEqual(app.buttons.containing(.staticText, identifier: "HSBC One Investment Services").count, 1)
+        assertAccountInventory(singapore: [1, 2, 3], hongKong: [6, 7], in: app)
     }
 
     func testLinkedAccountsAndGlobalInvestmentViews() throws {
         let app = launch()
+        linkAllAvailableDemoAccounts(in: app)
         app.buttons["wealth.viewDetails"].tap()
         XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["giv.totalValue"].label.contains("$"))
@@ -513,6 +543,7 @@ final class WealthHubUITests: XCTestCase {
 
     func testGlobalMarketsShowsAllocationBarAndVerticalHoldings() throws {
         let app = launch()
+        linkAllAvailableDemoAccounts(in: app)
         app.buttons["wealth.viewDetails"].tap()
         XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 5))
         selectAllGIVAccounts(in: app)
@@ -549,6 +580,7 @@ final class WealthHubUITests: XCTestCase {
 
     func testGlobalPerformanceDefaultsToYTDWithReferenceComparison() throws {
         let app = launch()
+        linkAllAvailableDemoAccounts(in: app)
         app.buttons["wealth.viewDetails"].tap()
         XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 5))
         selectAllGIVAccounts(in: app)
@@ -590,6 +622,8 @@ final class WealthHubUITests: XCTestCase {
 
     func testOtherBankPerformanceKeepsHSBCAndMarketBenchmarksEnabled() throws {
         let app = launch()
+        connectOtherBank("DBS", in: app)
+        scrollUntilHittable(app.buttons["wealth.viewDetails"], in: app, upwards: false)
         app.buttons["wealth.viewDetails"].tap()
         XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 5))
         selectOnlyGIVAccount("10000000-0000-4000-8000-000000000004", market: "sg", in: app)
@@ -728,14 +762,105 @@ final class WealthHubUITests: XCTestCase {
     }
 
     private func openAddPortfolio(in app: XCUIApplication) {
-        let generate = app.buttons["portfolio.analysis.generate"]
-        scrollUntilHittable(generate, in: app)
-        generate.tap()
         let addHoldings = app.buttons["portfolio.addHoldings"]
-        XCTAssertTrue(addHoldings.waitForExistence(timeout: 8))
+        if !addHoldings.exists {
+            let generate = app.buttons["portfolio.analysis.generate"]
+            scrollUntilHittable(generate, in: app)
+            generate.tap()
+            XCTAssertTrue(addHoldings.waitForExistence(timeout: 8))
+        }
         scrollUntilHittable(addHoldings, in: app)
-        addHoldings.tap()
-        XCTAssertTrue(app.buttons["portfolio.add.statement"].waitForExistence(timeout: 3))
+        positionWealthButton(addHoldings, in: app)
+        recordPortfolioAddGeometry(addHoldings, in: app, name: "Before opening Add a portfolio")
+        attachScreenshot(app, name: "Add portfolio button fully visible before tapping")
+        addHoldings.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let opened = app.buttons["portfolio.add.statement"].waitForExistence(timeout: 3)
+        if !opened {
+            attachScreenshot(app, name: "Add portfolio did not open after one tap")
+            recordPortfolioAddGeometry(addHoldings, in: app, name: "Add a portfolio failed to open")
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "Add portfolio presentation failure hierarchy"
+            hierarchy.lifetime = .keepAlways
+            add(hierarchy)
+        }
+        XCTAssertTrue(opened)
+    }
+
+    private func positionWealthButton(_ button: XCUIElement, in app: XCUIApplication) {
+        // isHittable can be true when only the top of this button is exposed above
+        // the persistent help bar. Put its whole frame inside the scroll viewport.
+        for _ in 0..<5 {
+            let frame = button.frame
+            let visible = portfolioVisibleBounds(in: app)
+            if visible.contains(frame) && button.isHittable { return }
+            let delta = frame.midY - visible.midY
+            let distance = min(max(abs(delta), 60), visible.height * 0.55)
+            let direction: CGFloat = delta >= 0 ? 1 : -1
+            let start = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(
+                dx: visible.midX - app.frame.minX,
+                dy: visible.midY - app.frame.minY + direction * distance / 2))
+            let end = start.withOffset(CGVector(dx: 0, dy: -direction * distance))
+            XCTContext.runActivity(named: "Position Wealth button: \(button.identifier) \(frame) inside \(visible)") { _ in
+                start.press(forDuration: 0.05, thenDragTo: end)
+                recordPortfolioAddGeometry(button, in: app, name: "After positioning Add button")
+            }
+        }
+        if portfolioVisibleBounds(in: app).contains(button.frame) && button.isHittable { return }
+        recordPortfolioAddGeometry(button, in: app, name: "Add button could not become fully visible")
+        attachScreenshot(app, name: "Add portfolio button remains outside the usable viewport")
+        XCTAssertTrue(portfolioVisibleBounds(in: app).contains(button.frame) && button.isHittable,
+                      "The entire Add button must be visible above the persistent help bar before tapping.")
+    }
+
+    private func portfolioVisibleBounds(in app: XCUIApplication) -> CGRect {
+        let wealthTab = app.buttons["banking.tab.wealth"]
+        let help = app.buttons["wealth.assistant.open"]
+        let top = wealthTab.exists ? max(app.frame.minY + 20, wealthTab.frame.maxY + 12) : app.frame.minY + 20
+        let bottom = help.exists ? help.frame.minY - 16 : app.frame.maxY - 40
+        return CGRect(x: app.frame.minX + 8, y: top, width: app.frame.width - 16, height: max(1, bottom - top))
+    }
+
+    private func recordPortfolioAddGeometry(_ button: XCUIElement, in app: XCUIApplication, name: String) {
+        let buttonGeometry = button.exists ? "button=\(button.frame), hittable=\(button.isHittable)" : "button absent"
+        let geometry = "\(buttonGeometry), visible=\(portfolioVisibleBounds(in: app)), app=\(app.frame)"
+        XCTContext.runActivity(named: "\(name): \(geometry)") { _ in
+            let attachment = XCTAttachment(string: geometry)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    private func linkAllAvailableDemoAccounts(in app: XCUIApplication) {
+        openAddPortfolio(in: app)
+        includeGlobalHSBCAccounts(in: app)
+        connectOtherBank("DBS", in: app)
+        connectOtherBank("Standard Chartered", in: app)
+        let details = app.buttons["wealth.viewDetails"]
+        scrollUntilHittable(details, in: app, upwards: false)
+        positionWealthButton(details, in: app)
+    }
+
+    private func connectOtherBank(_ bank: String, in app: XCUIApplication) {
+        openAddPortfolio(in: app)
+        app.buttons["portfolio.add.bank"].tap()
+        let bankOption = app.buttons["portfolio.bank.\(bank)"]
+        XCTAssertTrue(bankOption.waitForExistence(timeout: 3))
+        scrollUntilHittable(bankOption, in: app)
+        bankOption.tap()
+        let connect = app.buttons["portfolio.bank.connect"]
+        XCTAssertFalse(connect.isEnabled)
+        let consent = app.switches["portfolio.bank.consent"]
+        scrollUntilHittable(consent, in: app)
+        consent.tap()
+        XCTAssertTrue(connect.isEnabled)
+        connect.tap()
+        let proceed = app.buttons["portfolio.bank.proceed"]
+        XCTAssertTrue(proceed.waitForExistence(timeout: 3))
+        XCTAssertTrue(proceed.isEnabled)
+        proceed.tap()
+        XCTAssertTrue(app.buttons["banking.tab.wealth"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["portfolio.analysis.updated"].firstMatch.waitForExistence(timeout: 8))
     }
 
     private func includeGlobalHSBCAccounts(in app: XCUIApplication) {
@@ -744,11 +869,40 @@ final class WealthHubUITests: XCTestCase {
         hsbc.tap()
         let confirm = app.buttons["portfolio.hsbc.confirm"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        let available = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "portfolio.hsbc.account."))
+        XCTAssertEqual(available.count, 2, "Only the two unlinked HSBC portfolios should be offered.")
+        for number in [3, 7] {
+            let account = app.buttons["portfolio.hsbc.account.\(demoAccountID(number))"]
+            XCTAssertTrue(account.exists)
+            XCTAssertTrue(account.isSelected, "Available HSBC accounts must be selected by default.")
+        }
         XCTAssertTrue(confirm.isEnabled)
         confirm.coordinate(withNormalizedOffset: CGVector(dx: 0.96, dy: 0.5)).tap()
         XCTAssertTrue(app.buttons["banking.tab.wealth"].waitForExistence(timeout: 5))
         let updated = app.descendants(matching: .any)["portfolio.analysis.updated"].firstMatch
         XCTAssertTrue(updated.waitForExistence(timeout: 8))
+    }
+
+    private func assertAccountInventory(singapore: [Int], hongKong: [Int], in app: XCUIApplication,
+                                        file: StaticString = #filePath, line: UInt = #line) {
+        let selector = app.buttons["accountSelector"]
+        scrollUntilHittable(selector, in: app, upwards: false, file: file, line: line)
+        selector.tap()
+        XCTAssertTrue(app.staticTexts["accountSelector.title"].waitForExistence(timeout: 3), file: file, line: line)
+        for (market, numbers) in [("sg", singapore), ("hk", hongKong)] {
+            app.buttons["accountSelector.market.\(market)"].tap()
+            let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "accountSelector.account."))
+            let expected = Set(numbers.map { "accountSelector.account." + demoAccountID($0) })
+            let actual = Set(rows.allElementsBoundByIndex.map(\.identifier))
+            XCTAssertEqual(actual, expected, "Unexpected \(market) accounts in the current demo session.", file: file, line: line)
+            XCTAssertEqual(rows.count, expected.count, "Each linked account must appear exactly once.", file: file, line: line)
+        }
+        app.buttons["accountSelector.close"].tap()
+        XCTAssertTrue(app.buttons["banking.tab.wealth"].waitForExistence(timeout: 3), file: file, line: line)
+    }
+
+    private func demoAccountID(_ number: Int) -> String {
+        "10000000-0000-4000-8000-" + String(format: "%012d", number)
     }
 
     private func scrollUntilHittable(_ element: XCUIElement, in app: XCUIApplication, upwards: Bool = true, maximumSwipes: Int = 7, file: StaticString = #filePath, line: UInt = #line) {

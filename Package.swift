@@ -7,7 +7,26 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [.library(name: "WealthHubCore", targets: ["WealthHub"])],
     targets: [
-        .target(name: "WealthHub", path: "WealthHub", exclude: ["Assets.xcassets", "PrivacyInfo.xcprivacy", "AccountsView.swift", "AddAccountFlow.swift", "AddPortfolioSheet.swift", "BankingNavigation.swift", "CompareView.swift", "InvestmentViews.swift", "GIVPortfolioData.swift", "GIVPerformanceView.swift", "GIVAnalysisView.swift", "StatementExtractionService.swift", "Theme.swift", "WealthHubApp.swift", "WealthView.swift", "WealthSupportingViews.swift"], sources: ["Models.swift", "PortfolioStore.swift", "StatementParser.swift"]),
+        .target(
+            name: "WealthHub",
+            path: ".",
+            exclude: [
+                "README.md", "README.zh-CN.md", "Samples", "Screenshots", "WealthHub.xcodeproj",
+                "WealthHubTests", "WealthHubUITests", "build", "docs", "project.yml", "scripts",
+                "WealthHub/Assets.xcassets", "WealthHub/PrivacyInfo.xcprivacy",
+                "WealthHub/AccountsView.swift", "WealthHub/AddAccountFlow.swift",
+                "WealthHub/AddPortfolioSheet.swift", "WealthHub/BankingNavigation.swift",
+                "WealthHub/CompareView.swift", "WealthHub/InvestmentViews.swift",
+                "WealthHub/GIVPerformanceView.swift", "WealthHub/GIVAnalysisView.swift",
+                "WealthHub/StatementExtractionService.swift", "WealthHub/WealthHubApp.swift",
+                "WealthHub/WealthView.swift", "WealthHub/WealthSupportingViews.swift"
+            ],
+            sources: [
+                "WealthHub/Models.swift", "WealthHub/PortfolioStore.swift", "WealthHub/StatementParser.swift",
+                "WealthHub/SampleData.swift", "WealthHub/GIVPortfolioData.swift", "WealthHub/Theme.swift"
+            ],
+            resources: [.copy("Sample")]
+        ),
         .testTarget(name: "WealthHubTests", dependencies: ["WealthHub"], path: "WealthHubTests")
     ]
 )

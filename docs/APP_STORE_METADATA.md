@@ -65,7 +65,7 @@ STATEMENT WORKFLOW
 ABOUT THIS DEMO
 All starting accounts and bank connection flows use sample data. Exchange rates are fixed. Performance charts do not represent actual historical returns, and risk scenarios use illustrative assumptions. Portfolio explanations run on the device without a remote AI service. The app does not connect to banks, access banking credentials, execute trades, or provide banking services.
 
-No login, subscription, or purchase is required. Saved holdings remain on your device. Camera and photo access are optional for statement import.
+No login, subscription, or purchase is required. Holdings are saved locally during the current app session; fully closing and reopening the app restores the initial demo accounts. Camera and photo access are optional for statement import.
 ```
 
 ## App Review information
@@ -78,7 +78,7 @@ This build is a portfolio analysis demonstration with local sample data. It does
 Sign-in required: No. No username, password, subscription, purchase, or external hardware is needed to use the sample flows.
 
 Suggested review steps:
-1. Launch the app. It opens on Wealth with sample accounts.
+1. Launch the app. It opens on Wealth with three HSBC accounts: Singapore Current Account, Singapore Equity Investment Account, and Hong Kong HSBC One Investment Services. The remaining HSBC Unit Trust and FundMax accounts, DBS, and Standard Chartered can be added through the portfolio flow. Fully close and relaunch to reset the demo and repeat first-time linking or import.
 2. Tap Generate AI analysis to view locally generated portfolio explanations.
 3. Open the account selector, select Singapore or Hong Kong sample accounts, and tap Confirm.
 4. Open Add other holdings to analyse, then Upload or scan a statement, then Try a sample statement. Review the extracted holdings and tap Proceed. This route requires no personal documents or camera access.
