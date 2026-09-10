@@ -45,7 +45,7 @@ bash scripts/run-demo.sh
 3. **Add other holdings to analyse**：打开原稿 Add a portfolio 底部弹层，可添加全球 HSBC 账户、连接其他银行或上传／扫描账单。全球 HSBC 路径选择现有账户而不重复创建；银行路径使用本地样本及确认步骤。
 4. **Upload or scan a statement**：Upload／Take a photo／Cancel；支持 CSV、PDF 和图片本地提取。模拟器无摄像头时可选择图库或示例账单。识别后进入 Extracted outcome，逐项编辑持仓，Proceed 后保存且只保存一次；取消不会创建账户。
 5. **返回分析**：新增持仓自动并入当前选择、刷新分析及总资产；View my global holdings 进入包含全部账户的 Global Investment View。
-6. **Global Investment View / GIV - L3**：顶部账户胶囊可跨银行、跨市场筛选；Markets 提供资产／地区双环图及可展开持仓；Performance 支持市场、过去一月／一年／自定义日期、TWRR／MWRR、可拖动的收益曲线与 S&P 500／HSBC 参考组合／HSI 基准；Analysis 提供币种半环图、地区地图、行业面积图、分析卡片及可切换的压力场景。
+6. **Global Investment View / GIV - L3**：顶部账户胶囊可跨银行、跨市场筛选；Markets 按“For Sept 14 Valentin's demo”设计，采用顶部占比条与纵向可展开的持仓明细，展示金额、收益及账户市场标签；Performance 默认 YTD，同时支持过去一月／一年／自定义日期、市场筛选、TWRR／MWRR、可拖动的收益曲线与 S&P 500／HSBC 参考组合／HSI 对比；Analysis 提供币种半环图、地区地图、行业面积图、分析卡片及可切换的压力场景。
 7. **Your holdings**：默认原稿的横向配置条和资产类别列表；支持展开明细，并切换 Allocation analysis／Risk analysis、双层环形图和压力情景。
 8. **产品服务／助手栏**：保留原稿布局，产品业务为预览；助手支持本地组合摘要、配置问题与添加指引。
 9. **菜单中的辅助功能**：账户管理、账户对比、设置仍可使用，作为 Wealth 的辅助入口，不再占据底部导航。
@@ -60,7 +60,7 @@ BA 同事日常只需修改 **[Sample/Portfolios.csv](Sample/Portfolios.csv)**�
 - 老版本的 3 个默认账户会执行一次迁移：补齐新演示账户和分类信息，同时保留原 ID、用户修改和新增账户。迁移完成后的删除不会被自动恢复；已清空的组合继续保持为空。
 - 本地演示账户和固定汇率，无银行 API、行情 API、真实金融交易或远程数据上传。
 - 市值 = 数量 × 当前单价；成本 = 数量 × 平均成本；未实现收益 = 市值 − 成本。跨币种计算先通过固定汇率统一到展示币种。
-- 资产总览的收益率 = 未实现收益 ÷ 成本，零成本显示 N/A。GIV Performance 的历史与基准曲线是以 2026-09-09 为锚点的确定性演示序列，随所选持仓、市场和日期更新；不是实际历史业绩。基准走势独立于账户选择。演示不设外部现金流，因此展示的期间 TWRR 与 MWRR 相同。
+- 资产总览的收益率 = 未实现收益 ÷ 成本，零成本显示 N/A。GIV Performance 根据配置的演示日期生成确定性历史序列，各银行与基准具有不同的回撤和恢复走势。默认示例 YTD 收益为 **S&P 500 9.6%、HSBC reference 11.2%、全部全球账户约 8.3%**，均为虚构演示数据，并非真实历史业绩。参考组合默认勾选：新加坡使用 Equity Investment Account，香港使用 HSBC One Investment Services；只选该源账户时，个人曲线与参考曲线重叠。S&P 500 与 HSI 不随账户选择变化。演示不设外部现金流，因此展示的期间 TWRR 与 MWRR 相同。BA 可修改的收益及波动参数见 [Sample/Others](Sample/Others/README.md)。
 - GIV 地区和行业图使用每项持仓的分类字段；导入数据未填写分类时，地区回退到所属账户市场，行业回退到资产类别。基金与结构性产品使用主要分类，不提供底层资产穿透分析。币种图按持仓报价币种聚合。
 - 风险散点按资产类别使用固定示例评分；压力测试对当前仓位施加美元下跌、股票市场下跌或香港持仓下跌等简单冲击。AI analysis 是本地模板生成，不调用大模型。
 - 新 Wealth 账单流程：导入文件上限 10 MB、PDF 最多 5 页、图片最多 4,000 万像素、最多 1,000 条持仓。CSV 使用严格七列格式；PDF 优先提取文本，必要时使用 Vision 本地 OCR；图片使用 Vision 本地 OCR。不会把无法识别的真实文件替换为演示持仓。
@@ -76,7 +76,7 @@ BA 同事日常只需修改 **[Sample/Portfolios.csv](Sample/Portfolios.csv)**�
 swift test
 ```
 
-核心逻辑可独立在 macOS 14+ 测试，不依赖模拟器。已通过 9 项测试，覆盖混合币种估值与配置汇总、账户／持仓 CRUD、CSV 校验、币种后缀、默认关联账户、旧版数据兼容、保留用户编辑的迁移及删除／空组合持久化。
+核心逻辑可独立在 macOS 14+ 测试，不依赖模拟器。覆盖混合币种估值与配置汇总、账户／持仓 CRUD、CSV 校验、默认关联账户、数据迁移及持久化、YTD 收益目标、曲线走势差异及参考源账户一致性。
 
 附带 `WealthHubUITests`，覆盖顶部导航、账户选择／菜单对比、示例导入／编辑／返回分析、HSBC 账户重复包含检查，以及预关联 DBS／渣打和完整 GIV - L3 流程：
 

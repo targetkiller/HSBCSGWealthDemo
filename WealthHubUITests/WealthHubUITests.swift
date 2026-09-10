@@ -43,9 +43,9 @@ final class WealthHubUITests: XCTestCase {
         attachAppStoreScreenshot(name: "05-GIV-Markets")
 
         app.buttons["giv.tab.Performance"].tap()
-        let year = app.buttons["giv.performance.period.year"]
-        XCTAssertTrue(year.waitForExistence(timeout: 3))
-        year.tap()
+        let ytd = app.buttons["giv.performance.period.ytd"]
+        XCTAssertTrue(ytd.waitForExistence(timeout: 3))
+        XCTAssertTrue(ytd.isSelected)
         let chart = app.descendants(matching: .any)["giv.performance.chart"].firstMatch
         scrollUntilHittable(chart, in: app)
         if chart.frame.maxY > app.frame.maxY - 40 { app.swipeUp() }
@@ -354,20 +354,19 @@ final class WealthHubUITests: XCTestCase {
         XCTAssertTrue(app.buttons["giv.accounts"].label.contains("All global accounts selected"))
         attachScreenshot(app, name: "GIV Markets by asset class")
 
-        let regions = app.buttons["giv.markets.region"]
-        scrollUntilHittable(regions, in: app)
-        regions.tap()
-        XCTAssertTrue(regions.isSelected)
-        attachScreenshot(app, name: "GIV Markets by region")
+        let allocation = app.descendants(matching: .any)["giv.holdings.allocationBar"].firstMatch
+        XCTAssertTrue(allocation.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["giv.markets.region"].exists)
 
         let performance = app.buttons["giv.tab.Performance"]
         scrollUntilHittable(performance, in: app, upwards: false)
         performance.tap()
-        XCTAssertTrue(app.buttons["giv.performance.period.month"].waitForExistence(timeout: 3))
-        let monthReturn = app.descendants(matching: .any)["giv.performance.return"].firstMatch.label
+        XCTAssertTrue(app.buttons["giv.performance.period.ytd"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["giv.performance.period.ytd"].isSelected)
+        let ytdReturn = app.descendants(matching: .any)["giv.performance.return"].firstMatch.label
         app.buttons["giv.performance.period.year"].tap()
         XCTAssertTrue(app.buttons["giv.performance.period.year"].isSelected)
-        XCTAssertNotEqual(monthReturn, app.descendants(matching: .any)["giv.performance.return"].firstMatch.label)
+        XCTAssertNotEqual(ytdReturn, app.descendants(matching: .any)["giv.performance.return"].firstMatch.label)
         let chart = app.descendants(matching: .any)["giv.performance.chart"].firstMatch
         scrollUntilHittable(chart, in: app)
         if chart.frame.maxY > app.frame.maxY - 60 { app.swipeUp() }
@@ -395,6 +394,69 @@ final class WealthHubUITests: XCTestCase {
         XCTAssertTrue(equityShock.waitForExistence(timeout: 3))
         equityShock.tap()
         XCTAssertTrue(app.descendants(matching: .any)["giv.scenario.impact"].firstMatch.exists)
+    }
+
+    func testGlobalMarketsShowsAllocationBarAndVerticalHoldings() throws {
+        let app = launch()
+        app.buttons["wealth.viewDetails"].tap()
+        XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 5))
+        selectAllGIVAccounts(in: app)
+
+        let allocation = app.descendants(matching: .any)["giv.holdings.allocationBar"].firstMatch
+        XCTAssertTrue(allocation.waitForExistence(timeout: 3))
+        scrollUntilHittable(allocation, in: app)
+        XCTAssertGreaterThan(allocation.frame.width, allocation.frame.height, "Asset allocation must use a horizontal bar.")
+        XCTAssertFalse(app.buttons["giv.markets.region"].exists)
+        XCTAssertFalse(app.buttons["giv.markets.asset"].exists)
+
+        let stocks = app.buttons["giv.holdings.Stocks"]
+        let bonds = app.buttons["giv.holdings.Bonds"]
+        XCTAssertTrue(stocks.waitForExistence(timeout: 3))
+        XCTAssertTrue(bonds.exists)
+        XCTAssertGreaterThan(bonds.frame.minY, stocks.frame.maxY - 1, "Asset categories must form a vertical list.")
+        XCTAssertEqual(stocks.frame.minX, bonds.frame.minX, accuracy: 2)
+        XCTAssertEqual(stocks.frame.width, bonds.frame.width, accuracy: 2)
+        let markets = app.descendants(matching: .any)["giv.holdings.markets.Stocks"].firstMatch
+        XCTAssertTrue(markets.exists)
+        XCTAssertTrue(markets.label.contains("SG"))
+        XCTAssertTrue(markets.label.contains("HK"))
+        let gain = app.descendants(matching: .any)["giv.holdings.gain.Stocks"].firstMatch
+        XCTAssertTrue(gain.exists)
+        XCTAssertFalse(gain.label.isEmpty)
+        attachScreenshot(app, name: "GIV global Markets - allocation bar and vertical SG HK holdings")
+
+        scrollUntilHittable(stocks, in: app)
+        stocks.tap()
+        let holding = app.staticTexts["NVIDIA"]
+        XCTAssertTrue(holding.waitForExistence(timeout: 3), "An asset category must still expand to its underlying holdings.")
+        attachScreenshot(app, name: "GIV global Markets - expanded stock holdings")
+    }
+
+    func testGlobalPerformanceDefaultsToYTDWithReferenceComparison() throws {
+        let app = launch()
+        app.buttons["wealth.viewDetails"].tap()
+        XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 5))
+        selectAllGIVAccounts(in: app)
+        app.buttons["giv.tab.Performance"].tap()
+
+        let ytd = app.buttons["giv.performance.period.ytd"]
+        XCTAssertTrue(ytd.waitForExistence(timeout: 3))
+        XCTAssertTrue(ytd.isSelected, "The latest design opens Performance at year to date.")
+        assertHSBCReference("HSBC reference: (068) Equity Investment Account · Singapore", in: app)
+        XCTAssertTrue(app.buttons["giv.performance.benchmark.S&P 500"].isSelected)
+        let tooltipElements = app.descendants(matching: .any)
+            .matching(identifier: "giv.performance.tooltip")
+        XCTAssertTrue(tooltipElements.firstMatch.exists)
+        // SwiftUI can expose the VStack as combined labels or propagate its
+        // identifier to separate texts. Scope both forms to the tooltip so the
+        // legend cannot satisfy these assertions about the displayed returns.
+        let tooltipText = tooltipElements.allElementsBoundByIndex.flatMap { element in
+            [element.label] + element.descendants(matching: .staticText).allElementsBoundByIndex.map(\.label)
+        }.joined(separator: "\n")
+        for name in ["My total return", "HSBC reference portfolio", "S&P 500"] {
+            XCTAssertTrue(tooltipText.contains(name), "The tooltip must expose \(name). Actual tooltip: \(tooltipText)")
+        }
+        attachScreenshot(app, name: "GIV global Performance - default YTD versus HSBC reference and S&P 500")
     }
 
     func testHSBCReferenceUsesSelectedSingaporeAndHongKongAccounts() throws {
@@ -457,6 +519,18 @@ final class WealthHubUITests: XCTestCase {
         singapore.tap()
         XCTAssertTrue(singapore.isSelected)
         assertHSBCReference("HSBC reference: (068) Equity Investment Account · Singapore", in: app)
+    }
+
+    private func selectAllGIVAccounts(in app: XCUIApplication) {
+        let selector = app.buttons["giv.accounts"]
+        scrollUntilHittable(selector, in: app, upwards: false)
+        selector.tap()
+        let global = app.buttons["accountSelector.global"]
+        XCTAssertTrue(global.waitForExistence(timeout: 3))
+        if global.value as? String != "Selected" { global.tap() }
+        app.buttons["Confirm"].tap()
+        XCTAssertTrue(selector.waitForExistence(timeout: 3))
+        XCTAssertTrue(selector.label.contains("All global accounts selected"))
     }
 
     private func selectOnlyGIVAccount(_ id: String, market: String, in app: XCUIApplication) {

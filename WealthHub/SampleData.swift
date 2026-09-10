@@ -98,9 +98,9 @@ struct SampleCatalog {
         "wealth_scenarios": "id,name,description,shockRate,referenceDecline",
         "wealth_scenario_targets": "id,scenarioID,category,currency",
         "wealth_regions": "id,name,color",
-        "performance": "id,asOfDate,initialStartDate,initialEndDate,initialMarket,initialPeriod,initialMetric,allMarketsLabel,marketFilters,sampleIntervals,seedModulus,maxYears,minDuration,primaryFrequency,primarySeedMultiplier,secondaryFrequency,secondarySeedMultiplier,secondaryWeight,anchorBenchmarkID,referenceBenchmarkID,defaultReferenceMarket,sgReferencePortfolioID,hkReferencePortfolioID,holdingTiltWeight,maxHoldingTiltPercent",
-        "performance_banks": "id,institution,annualSpreadPercent,sqrtSpreadPercent,waveAmplitude,primaryFrequency,secondaryFrequency,phaseOffset",
-        "benchmarks": "id,name,annualReturnPercent,sqrtReturnPercent,amplitude,colorHex,symbol,defaultSelected",
+        "performance": "id,asOfDate,initialStartDate,initialEndDate,initialMarket,initialPeriod,initialMetric,allMarketsLabel,marketFilters,sampleIntervals,seedModulus,maxYears,minDuration,primaryFrequency,primarySeedMultiplier,secondaryFrequency,secondarySeedMultiplier,secondaryWeight,trendVariation,recoveryStrength,eventPhaseWeight,referenceBenchmarkID,defaultReferenceMarket,sgReferencePortfolioID,hkReferencePortfolioID,holdingTiltWeight,maxHoldingTiltPercent",
+        "performance_banks": "id,institution,ytdReturnPercent,waveAmplitude,primaryFrequency,secondaryFrequency,phaseOffset,drawdownPosition,drawdownDepth,drawdownWidth,recoveryPosition",
+        "benchmarks": "id,name,ytdReturnPercent,amplitude,drawdownPosition,drawdownDepth,drawdownWidth,recoveryPosition,colorHex,symbol,defaultSelected",
         "analytics": "id,currencyIllustrationShock,concentrationThreshold,defaultScenarioID",
         "asset_profiles": "id,riskScore,liquidityScore,riskLabel,defaultSector",
         "scenarios": "id,title,currencies,assetClasses,regions,shock,skipMatchingReportingCurrency",
@@ -409,6 +409,9 @@ struct SampleCatalog {
         try number(performance, "maxYears", min: Double.leastNormalMagnitude, max: 100)
         try number(performance, "holdingTiltWeight", min: 0, max: 1)
         try number(performance, "maxHoldingTiltPercent", min: 0, max: 5)
+        try number(performance, "trendVariation", min: 0, max: 1)
+        try number(performance, "recoveryStrength", min: 0, max: 1)
+        try number(performance, "eventPhaseWeight", min: 0, max: 0.15)
         let dateFormatter = DateFormatter(); dateFormatter.locale = Locale(identifier: "en_US_POSIX"); dateFormatter.timeZone = TimeZone(secondsFromGMT: 0); dateFormatter.dateFormat = "yyyy-MM-dd"; dateFormatter.isLenient = false
         var dates: [String: Date] = [:]
         for key in ["asOfDate", "initialStartDate", "initialEndDate"] {
@@ -416,14 +419,18 @@ struct SampleCatalog {
             dates[key] = date
         }
         try require(dates["initialStartDate"]! <= dates["initialEndDate"]! && dates["initialEndDate"]! <= dates["asOfDate"]!, performance, "Expected initialStartDate ≤ initialEndDate ≤ asOfDate.")
-        try reference(performance, "initialPeriod", ["month", "year", "custom"]); try reference(performance, "initialMetric", ["TWRR", "MWRR"])
+        var calibrationCalendar = Calendar(identifier: .gregorian)
+        calibrationCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let yearStart = calibrationCalendar.date(from: calibrationCalendar.dateComponents([.year], from: dates["asOfDate"]!))!
+        try require(dates["asOfDate"]! > yearStart, performance, "asOfDate must be after January 1 to calibrate a nonempty YTD period.")
+        let ytdYears = dates["asOfDate"]!.timeIntervalSince(yearStart) / (86_400 * 365)
+        try require(performance.double("maxYears") >= ytdYears, performance, "maxYears must cover the full YTD period through asOfDate.")
+        try reference(performance, "initialPeriod", ["month", "year", "ytd", "custom"]); try reference(performance, "initialMetric", ["TWRR", "MWRR"])
         let filters = Set(performance.list("marketFilters"))
         try require(filters.count == performance.list("marketFilters").count, performance, "marketFilters must not contain duplicate names.")
         try reference(performance, "initialMarket", filters); try reference(performance, "allMarketsLabel", filters)
         try require(filters.subtracting([performance.string("allMarketsLabel")]).isSubset(of: marketNames.union(regionNames)), performance, "marketFilters must use configured market or region names.")
-        try reference(performance, "anchorBenchmarkID", ids("benchmarks"))
         try reference(performance, "referenceBenchmarkID", ids("benchmarks"))
-        try require(performance.string("anchorBenchmarkID") != performance.string("referenceBenchmarkID"), performance, "The anchor benchmark must be separate from the account reference.")
         try reference(performance, "defaultReferenceMarket", ["Singapore", "Hong Kong"])
         for (key, market) in [("sgReferencePortfolioID", "Singapore"), ("hkReferencePortfolioID", "Hong Kong")] {
             try nonempty(performance, key)
@@ -435,23 +442,39 @@ struct SampleCatalog {
                 try require(!rows("account_templates").contains { $0.string("portfolioID") == portfolioID } && !sets.contains(portfolioID), performance, "\(key) must identify an account, not a template or holdings-only group.")
             }
         }
+        func validateCurve(_ curve: SampleRecord, amplitudeKey: String, eventMargin: Double) throws {
+            try number(curve, "ytdReturnPercent", min: -99, max: 100)
+            let calibrationYears = dates["asOfDate"]!.timeIntervalSince(yearStart) / (86_400 * 365)
+            let maximumRatio = performance.double("maxYears") / calibrationYears
+            let maximumReturn = expm1(log1p(curve.double("ytdReturnPercent") / 100) * maximumRatio) * 100
+            let maximumTrend = abs(maximumReturn) * (1 + performance.double("trendVariation") / 4)
+            try require(maximumReturn.isFinite && maximumTrend.isFinite, curve,
+                        "ytdReturnPercent compounds beyond a finite chart value over maxYears. Lower the return or maxYears, or use a later asOfDate.")
+            try number(curve, amplitudeKey, min: 0, max: 10)
+            try number(curve, "drawdownDepth", min: 0, max: 20)
+            try number(curve, "drawdownWidth", min: 0.02, max: 0.3)
+            for key in ["drawdownPosition", "recoveryPosition"] {
+                try number(curve, key, min: 0.01 + eventMargin, max: 0.99 - eventMargin)
+            }
+            try require(curve.double("recoveryPosition") > curve.double("drawdownPosition"), curve, "recoveryPosition must follow drawdownPosition.")
+        }
         var performanceInstitutions = Set<String>()
         for row in rows("performance_banks") {
             try nonempty(row, "institution")
             try require(performanceInstitutions.insert(row.string("institution").lowercased()).inserted, row, "Each institution needs a single performance profile.")
-            try number(row, "annualSpreadPercent", min: -20, max: 20)
-            try number(row, "sqrtSpreadPercent", min: -20, max: 20)
-            try number(row, "waveAmplitude", min: 0, max: 5)
+            try validateCurve(row, amplitudeKey: "waveAmplitude", eventMargin: performance.double("eventPhaseWeight"))
             for key in ["primaryFrequency", "secondaryFrequency"] { try number(row, key, min: Double.leastNormalMagnitude, max: 100) }
             try number(row, "phaseOffset", min: -100, max: 100)
         }
         try require(performanceInstitutions.contains("*"), performance, "performance_banks.csv needs an institution '*' fallback profile.")
         for row in rows("benchmarks") {
             try nonempty(row, "name", "symbol"); try require(row.string("name") != "My total return", row, "My total return is reserved for the portfolio series.")
-            for key in ["annualReturnPercent", "sqrtReturnPercent", "amplitude"] {
-                if row.id == performance.string("referenceBenchmarkID") {
+            if row.id == performance.string("referenceBenchmarkID") {
+                for key in ["ytdReturnPercent", "amplitude", "drawdownPosition", "drawdownDepth", "drawdownWidth", "recoveryPosition"] {
                     try require(row.string(key).isEmpty, row, "\(key) must be blank for the reference derived from an account.")
-                } else { try number(row, key) }
+                }
+            } else {
+                try validateCurve(row, amplitudeKey: "amplitude", eventMargin: 0)
             }
             try require(row.string("colorHex").count == 6 && UInt32(row.string("colorHex"), radix: 16) != nil, row, "colorHex must contain six hexadecimal digits.")
             try boolean(row, "defaultSelected")

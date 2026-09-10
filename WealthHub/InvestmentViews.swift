@@ -116,34 +116,60 @@ struct InvestmentView: View {
 
 struct GIVMarketsView: View {
     @Environment(PortfolioStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let data: GIVPortfolioData
-    @State private var byRegion = false
     @State private var expanded: Set<String> = []
-    private var groups: [GIVSlice] { byRegion ? data.regions : data.assets }
+    private var groups: [GIVHoldingGroup] {
+        GIVHoldingGroup.order.compactMap { category in
+            let entries = data.entries.filter { $0.holding.category == category }
+            return entries.isEmpty ? nil : GIVHoldingGroup(category: category, entries: entries)
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Your holdings").font(.system(size: 17, weight: .medium))
-            GIVDoubleRing(groups: groups, entries: data.entries, byRegion: byRegion).frame(height: 270)
-            HStack(spacing: 0) {
-                modeButton("square.stack.3d.up", region: false)
-                modeButton("globe", region: true)
-            }.padding(2).background(Theme.background, in: Capsule()).fixedSize()
-            VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Your holdings").font(.system(size: 19, weight: .medium)).padding(.vertical, 8)
+            allocationBar.padding(.top, 8)
+            if groups.isEmpty {
+                Text("No holdings in the selected accounts.").font(.system(size: 14)).foregroundStyle(Theme.muted).padding(.vertical, 24)
+            }
+            // The screen already scrolls; keep the legend rows in that same scroll flow.
+            LazyVStack(spacing: 0) {
                 ForEach(groups) { group in
-                    let items = data.entries.filter { byRegion ? $0.region == group.name : $0.holding.category.rawValue == group.name }
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { if expanded.contains(group.name) { expanded.remove(group.name) } else { expanded.insert(group.name) } }
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                            if expanded.contains(group.id) { expanded.remove(group.id) } else { expanded.insert(group.id) }
+                        }
                     } label: {
                         HStack(alignment: .top, spacing: 8) {
-                            Rectangle().fill(group.color).frame(width: 12, height: 12).padding(.top, 2)
-                            Text("\(group.name) (\(data.percent(group.value)))").font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading)
-                            Text(store.amount(group.value)).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
-                            Image(systemName: expanded.contains(group.name) ? "chevron.up" : "chevron.down").font(.system(size: 12, weight: .light)).padding(.top, 3)
-                        }.padding(.vertical, 17).contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityIdentifier("giv.holdings.\(group.name)")
-                    if expanded.contains(group.name) {
-                        ForEach(items) { entry in
+                            Rectangle().fill(group.color).frame(width: 14, height: 14)
+                                .frame(width: 18, height: 20).accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("\(group.title) (\(data.percent(group.value)))")
+                                    .font(.system(size: 14)).frame(maxWidth: .infinity, alignment: .leading)
+                                if group.category == .insurance {
+                                    Text("Total cash value").font(.system(size: 14)).padding(.top, 8)
+                                }
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    balance(group.value)
+                                    Spacer(minLength: 0)
+                                    gain(group)
+                                }
+                                HStack(spacing: 4) {
+                                    ForEach(group.markets, id: \.self) { market in
+                                        Text(market).font(.system(size: 12)).padding(.horizontal, 8).padding(.vertical, 4)
+                                            .background(Theme.line)
+                                    }
+                                }
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel(group.markets.joined(separator: ", "))
+                                .accessibilityIdentifier("giv.holdings.markets.\(group.id)")
+                            }
+                        }.padding(.vertical, 12).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityIdentifier("giv.holdings.\(group.id)")
+                        .accessibilityHint(expanded.contains(group.id) ? "Collapse holdings" : "Show individual holdings")
+                    if expanded.contains(group.id) {
+                        ForEach(group.entries) { entry in
                             NavigationLink { AccountDetailView(accountID: entry.account.id).toolbar(.visible, for: .navigationBar) } label: {
                                 HStack(spacing: 8) {
                                     BankMark(bank: entry.account.institution).scaleEffect(0.65).frame(width: 20)
@@ -157,43 +183,80 @@ struct GIVMarketsView: View {
                             }.buttonStyle(.plain)
                         }
                     }
-                    Divider()
+                    if group.id != groups.last?.id { Divider() }
                 }
             }
-        }.padding(16)
+        }.padding(.horizontal, 16).padding(.vertical, 12)
     }
 
-    private func modeButton(_ symbol: String, region: Bool) -> some View {
-        Button { withAnimation { byRegion = region; expanded = [] } } label: {
-            Image(systemName: symbol).font(.system(size: 17, weight: .light)).frame(width: 55, height: 36)
-                .background(byRegion == region ? .white : .clear, in: Capsule())
-                .overlay(Capsule().stroke(byRegion == region ? Theme.line : .clear))
-                .contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel(region ? "View by region" : "View by asset class")
-            .accessibilityIdentifier(region ? "giv.markets.region" : "giv.markets.asset")
-            .accessibilityAddTraits(byRegion == region ? .isSelected : [])
+    private var allocationBar: some View {
+        Chart {
+            ForEach(groups) { group in
+                BarMark(x: .value("Market value", group.value), y: .value("Allocation", "Holdings"), height: .fixed(12))
+                    .foregroundStyle(group.color)
+            }
+            ForEach(Array(groups.dropLast().enumerated()), id: \.element.id) { index, _ in
+                RuleMark(x: .value("Category boundary", groups.prefix(index + 1).reduce(0) { $0 + $1.value }))
+                    .foregroundStyle(.white).lineStyle(StrokeStyle(lineWidth: 1.5))
+            }
+        }
+        .chartXScale(domain: 0...(data.value > 0 ? data.value : 1)).chartXAxis(.hidden).chartYAxis(.hidden).chartLegend(.hidden)
+        .frame(height: 12).background(Theme.background)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Holdings allocation")
+        .accessibilityValue(groups.map { "\($0.title): \(data.percent($0.value))" }.joined(separator: ", "))
+        .accessibilityIdentifier("giv.holdings.allocationBar")
+    }
+
+    private func balance(_ value: Double) -> some View {
+        let parts = value.formatted(.number.locale(Locale(identifier: "en_SG")).precision(.fractionLength(2))).split(separator: ".")
+        return HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(store.hideAmounts ? "••••••" : String(parts.first ?? "0")).font(.system(size: 16, weight: .semibold))
+            if !store.hideAmounts { Text("." + String(parts.last ?? "00")).font(.system(size: 12, weight: .medium)) }
+            Text(" " + store.currency.rawValue).font(.system(size: 12)).foregroundStyle(Theme.muted)
+        }.lineLimit(1).minimumScaleFactor(0.75)
+            .accessibilityElement(children: .ignore).accessibilityLabel(store.amount(value))
+    }
+
+    private func gain(_ group: GIVHoldingGroup) -> some View {
+        let rate = group.returnRate.map { String(format: "%.2f%%", $0) } ?? "—"
+        let amount = group.profit.formatted(.number.locale(Locale(identifier: "en_SG")).precision(.fractionLength(2)))
+        let text = store.hideAmounts ? "••••••" : "\(rate) (\(group.profit >= 0 ? "+" : "")\(amount))"
+        return HStack(spacing: 3) {
+            if !store.hideAmounts { Image(systemName: group.profit >= 0 ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill").font(.system(size: 7)).accessibilityHidden(true) }
+            Text(text).font(.system(size: 14)).lineLimit(1).minimumScaleFactor(0.7)
+        }.foregroundStyle(group.profit >= 0 ? Theme.green : Theme.red)
+            .accessibilityElement(children: .ignore).accessibilityLabel("Unrealised gain/loss: " + text)
+            .accessibilityIdentifier("giv.holdings.gain.\(group.id)")
     }
 }
 
-private struct GIVDoubleRing: View {
-    let groups: [GIVSlice]
+private struct GIVHoldingGroup: Identifiable {
+    static let order: [AssetClass] = [.fund, .stock, .bond, .other, .insurance, .option, .cash]
+    let category: AssetClass
     let entries: [GIVEntry]
-    let byRegion: Bool
-
-    private var outerSlices: [GIVSlice] {
-        groups.flatMap { group in
-            entries.filter { byRegion ? $0.region == group.name : $0.holding.category.rawValue == group.name }
-                .enumerated().map { index, entry in GIVSlice(name: entry.id, value: entry.value, color: group.color.opacity(0.35 + Double(index % 4) * 0.14)) }
+    var id: String { category.rawValue }
+    var value: Double { entries.reduce(0) { $0 + $1.value } }
+    var cost: Double { entries.reduce(0) { $0 + $1.cost } }
+    var profit: Double { value - cost }
+    var returnRate: Double? { cost > 0 ? profit / cost * 100 : nil }
+    var title: String {
+        switch category {
+        case .fund: "Unit Trusts & Mutual funds"
+        case .stock: "Stocks & Equities / ETFs"
+        case .insurance: "Investment-linked insurance"
+        default: category.rawValue
         }
     }
-
-    var body: some View {
-        ZStack {
-            if groups.isEmpty { Circle().stroke(Theme.line, lineWidth: 50).padding(35) }
-            else {
-                Chart(groups) { group in SectorMark(angle: .value("Market value", group.value), innerRadius: .ratio(0.36), outerRadius: .ratio(0.79), angularInset: 1).foregroundStyle(group.color) }.chartLegend(.hidden)
-                Chart(outerSlices) { slice in SectorMark(angle: .value("Holding value", slice.value), innerRadius: .ratio(0.80), outerRadius: .ratio(1), angularInset: 1).foregroundStyle(slice.color) }.chartLegend(.hidden).accessibilityHidden(true)
-            }
-        }.padding(8).accessibilityLabel(byRegion ? "Holdings by region" : "Holdings by asset class")
+    var color: Color {
+        let index = category == .option ? 6 : category == .cash ? 5 : Self.order.firstIndex(of: category) ?? 0
+        return GIVPortfolioData.colors[index]
+    }
+    var markets: [String] {
+        let names = Set(entries.map { $0.account.market })
+        let configured = SampleData.rows("markets")
+        let known = configured.filter { names.contains($0.string("name")) }.map { $0.string("shortName") }
+        let unknown = names.subtracting(configured.map { $0.string("name") }).sorted()
+        return known + unknown
     }
 }

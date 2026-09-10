@@ -20,8 +20,7 @@ struct GIVPerformanceView: View {
     private var benchmarkNames: [String] { PerformanceSample.benchmarks.map { $0.string("name") } }
     private var range: ClosedRange<Date> {
         if period == "custom" { return min(start, end)...max(start, end) }
-        let first = Calendar.current.date(byAdding: period == "year" ? .year : .month, value: -1, to: Self.anchor) ?? Self.anchor
-        return first...Self.anchor
+        return GIVPerformanceModel.periodRange(for: period, asOf: Self.anchor)
     }
     private var performance: GIVPerformanceModel { GIVPerformanceModel(data: data, availableAccounts: store.accounts, market: market, range: range) }
     private var entries: [GIVEntry] { performance.entries }
@@ -60,13 +59,14 @@ struct GIVPerformanceView: View {
                 }
             }
             HStack(spacing: 0) {
+                periodButton("YTD", value: "ytd")
                 periodButton("Past 1 month", value: "month")
                 periodButton("Past 1 year", value: "year")
                 periodButton("Customized", value: "custom")
             }.padding(2).background(Theme.background, in: Capsule())
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 7) {
-                    Text(period == "month" ? "Past 1 month’s total return" : period == "year" ? "Past 1 year’s total return" : "Selected period’s total return").font(.system(size: 11)).foregroundStyle(Theme.muted)
+                    Text(period == "ytd" ? "YTD total return" : period == "month" ? "Past 1 month’s total return" : period == "year" ? "Past 1 year’s total return" : "Selected period’s total return").font(.system(size: 11)).foregroundStyle(Theme.muted)
                     HStack(spacing: 3) {
                         Image(systemName: finalReturn >= 0 ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill").font(.system(size: 8)).accessibilityHidden(true)
                         Text(store.amount(invested * finalReturn / 100)).font(.system(size: 21, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.65)
@@ -110,7 +110,7 @@ struct GIVPerformanceView: View {
             if value == "custom" { draftStart = start; draftEnd = end; customDates = true }
             else { period = value; selectedDate = nil }
         } label: {
-            Text(title).font(.system(size: 11)).frame(maxWidth: .infinity).frame(height: 38)
+            Text(title).font(.system(size: 11)).lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity).frame(height: 38)
                 .background(period == value ? .white : .clear, in: Capsule())
                 .overlay(Capsule().stroke(period == value ? Theme.line : .clear))
                 .contentShape(Rectangle())
@@ -120,7 +120,7 @@ struct GIVPerformanceView: View {
 
     private var tooltip: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text((activePoint?.date ?? range.upperBound).formatted(.dateTime.day().month(.abbreviated).year())).font(.system(size: 11)).foregroundStyle(Theme.muted)
+            Text(dateText(activePoint?.date ?? range.upperBound, abbreviated: true)).font(.system(size: 11)).foregroundStyle(Theme.muted)
             HStack(spacing: 6) {
                 Image(systemName: "circle.fill").font(.system(size: 9)).foregroundStyle(GIVPortfolioData.colors[0])
                 Text("My total return").font(.system(size: 11))
@@ -202,7 +202,10 @@ struct GIVPerformanceView: View {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { customDates = false } }
                     ToolbarItem(placement: .confirmationAction) { Button("Apply") { start = draftStart; end = draftEnd; period = "custom"; selectedDate = nil; customDates = false }.disabled(draftStart >= draftEnd).accessibilityIdentifier("giv.performance.dates.apply") }
                 }
-        }.presentationDetents([.medium])
+        }
+        .environment(\.calendar, PerformanceSample.calendar)
+        .environment(\.timeZone, PerformanceSample.timeZone)
+        .presentationDetents([.medium])
     }
 
     private func color(for series: String) -> Color {
@@ -210,7 +213,14 @@ struct GIVPerformanceView: View {
               let hex = UInt32(benchmark.string("colorHex"), radix: 16) else { return GIVPortfolioData.colors[0] }
         return Color(hex: hex)
     }
-    private func dateText(_ date: Date) -> String { date.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)) }
+    private func dateText(_ date: Date, abbreviated: Bool = false) -> String {
+        var style = abbreviated
+            ? Date.FormatStyle.dateTime.day().month(.abbreviated).year()
+            : Date.FormatStyle.dateTime.year().month(.twoDigits).day(.twoDigits)
+        style.calendar = PerformanceSample.calendar
+        style.timeZone = PerformanceSample.timeZone
+        return date.formatted(style)
+    }
 
     private var referenceSource: String {
         guard let account = performance.referenceAccount else {
@@ -226,13 +236,21 @@ struct GIVPerformanceView: View {
 private enum PerformanceSample {
     static let settings = SampleData.row("performance", id: "default")
     static let benchmarks = SampleData.rows("benchmarks")
+    // CSV dates represent calendar days in UTC throughout parsing, display, and selection.
+    static let timeZone = TimeZone(secondsFromGMT: 0)!
+    static let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        return calendar
+    }()
 
     static func benchmark(named name: String) -> SampleRecord? { benchmarks.first { $0.string("name") == name } }
 
     static func date(_ field: String) -> Date {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.calendar = calendar
+        formatter.timeZone = timeZone
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.isLenient = false
         guard let date = formatter.date(from: settings.string(field)) else {

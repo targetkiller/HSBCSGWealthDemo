@@ -542,8 +542,8 @@ final class PortfolioTests: XCTestCase {
         XCTAssertEqual(PortfolioStore(defaults: defaults).accounts, SampleData.accounts)
     }
 
-    func testPerformanceConfigurationRejectsIndependentReferenceReturnsAndSharedAnchor() throws {
-        for key in ["annualReturnPercent", "sqrtReturnPercent", "amplitude"] {
+    func testPerformanceConfigurationRejectsIndependentReferenceReturns() throws {
+        for key in ["ytdReturnPercent", "amplitude", "drawdownPosition", "drawdownDepth", "drawdownWidth", "recoveryPosition"] {
             try withSampleDirectory { directory in
                 let catalog = try SampleCatalog.load(directory: directory)
                 let referenceID = catalog.row("performance", id: "default").string("referenceBenchmarkID")
@@ -555,15 +555,6 @@ final class PortfolioTests: XCTestCase {
                     XCTAssertTrue(error.localizedDescription.contains("benchmarks.csv"), error.localizedDescription)
                     XCTAssertTrue(error.localizedDescription.contains(key), error.localizedDescription)
                 }
-            }
-        }
-        try withSampleDirectory { directory in
-            try rewriteTable("performance", in: directory) { rows in
-                rows[0]["anchorBenchmarkID"] = rows[0]["referenceBenchmarkID"]
-            }
-            XCTAssertThrowsError(try SampleCatalog.load(directory: directory)) { error in
-                XCTAssertTrue(error.localizedDescription.contains("performance.csv"), error.localizedDescription)
-                XCTAssertTrue(error.localizedDescription.contains("anchor benchmark"), error.localizedDescription)
             }
         }
     }
@@ -584,7 +575,7 @@ final class PortfolioTests: XCTestCase {
                     var duplicate = try XCTUnwrap(rows.first { $0["institution"] == "HSBC" })
                     duplicate["id"] = "second-hsbc-profile"
                     duplicate["institution"] = institution
-                    duplicate["annualSpreadPercent"] = "1.5"
+                    duplicate["ytdReturnPercent"] = "17.5"
                     rows.append(duplicate)
                 }
                 XCTAssertThrowsError(try SampleCatalog.load(directory: directory)) { error in
@@ -595,7 +586,97 @@ final class PortfolioTests: XCTestCase {
         }
     }
 
+    func testYTDRangeBeginsOnJanuaryFirstAndPreservesTheConfiguredAsOfDate() {
+        for (end, expectedStart) in [("2026-09-09", "2026-01-01"), ("2024-02-29", "2024-01-01")] {
+            let asOf = performanceDate(end)
+            let range = GIVPerformanceModel.periodRange(for: "ytd", asOf: asOf)
+            XCTAssertEqual(range.lowerBound, performanceDate(expectedStart))
+            XCTAssertEqual(range.upperBound, asOf)
+        }
+        let asOf = performanceDate("2026-09-09")
+        XCTAssertEqual(GIVPerformanceModel.periodRange(for: "month", asOf: asOf).lowerBound, performanceDate("2026-08-09"))
+        XCTAssertEqual(GIVPerformanceModel.periodRange(for: "year", asOf: asOf).lowerBound, performanceDate("2025-09-09"))
+    }
+
+    func testConfiguredYTDTargetsProduceTheDemoReferenceMarketAndGlobalReturns() throws {
+        let asOf = performanceDate(SampleData.row("performance", id: "default").string("asOfDate"))
+        let range = GIVPerformanceModel.periodRange(for: "ytd", asOf: asOf)
+        let singapore = try performanceAccount("hsbc-sg-equity")
+        let hongKong = try performanceAccount("hsbc-hk-investment")
+        for currency in Currency.allCases {
+            let all = performanceModel(accounts: SampleData.accounts, currency: currency, range: range)
+            XCTAssertEqual(try XCTUnwrap(all.history(for: "S&P 500").last?.value), 9.6)
+            XCTAssertEqual(try XCTUnwrap(all.history(for: "HSBC reference portfolio").last?.value), 11.2)
+            XCTAssertEqual(try XCTUnwrap(all.history(for: GIVPerformanceModel.mySeriesName).last?.value), 8.3, accuracy: 0.005,
+                           "The 8.3% scenario comes from the supplied global holdings and their invested-cost weights.")
+            for account in [singapore, hongKong] {
+                let single = performanceModel(accounts: [account], currency: currency, range: range)
+                XCTAssertEqual(try XCTUnwrap(single.history(for: GIVPerformanceModel.mySeriesName).last?.value), 11.2,
+                               "A single reference account must retain its 11.2% return, rather than being forced to the aggregate example.")
+            }
+        }
+        for (portfolioID, expected) in [("dbs-sg", 3.6), ("standard-chartered-hk", 3.1)] {
+            let account = try performanceAccount(portfolioID)
+            let model = performanceModel(accounts: [account], range: range)
+            XCTAssertEqual(try XCTUnwrap(model.history(for: GIVPerformanceModel.mySeriesName).last?.value), expected)
+        }
+    }
+
+    func testYTDConfigurationRejectsInvalidReturnsAndMalformedRecoveryShapes() throws {
+        let invalidCurves: [(table: String, field: String, value: String)] = [
+            ("performance_banks", "ytdReturnPercent", "-100"),
+            ("performance_banks", "ytdReturnPercent", "nan"),
+            ("benchmarks", "ytdReturnPercent", "inf"),
+            ("benchmarks", "ytdReturnPercent", "101"),
+            ("performance_banks", "drawdownWidth", "0"),
+            ("benchmarks", "drawdownDepth", "-1"),
+            ("performance_banks", "drawdownPosition", "1"),
+            ("benchmarks", "recoveryPosition", "0.1"),
+            ("performance", "trendVariation", "2"),
+            ("performance", "maxYears", "0.25"),
+            ("performance", "eventPhaseWeight", "1"),
+            ("performance", "recoveryStrength", "-1")
+        ]
+        for invalid in invalidCurves {
+            try withSampleDirectory { directory in
+                try rewriteTable(invalid.table, in: directory) { $0[0][invalid.field] = invalid.value }
+                XCTAssertThrowsError(try SampleCatalog.load(directory: directory)) { error in
+                    XCTAssertTrue(error.localizedDescription.contains(invalid.table + ".csv"), error.localizedDescription)
+                    XCTAssertTrue(error.localizedDescription.contains(invalid.field), error.localizedDescription)
+                }
+            }
+        }
+        try withSampleDirectory { directory in
+            try rewriteTable("performance", in: directory) { rows in
+                for field in ["asOfDate", "initialStartDate", "initialEndDate"] { rows[0][field] = "2026-01-01" }
+            }
+            XCTAssertThrowsError(try SampleCatalog.load(directory: directory)) { error in
+                XCTAssertTrue(error.localizedDescription.contains("YTD"), error.localizedDescription)
+            }
+        }
+    }
+
+    func testYTDCalibrationRejectsCompoundedOverflowInLongCustomPeriods() throws {
+        for table in ["performance_banks", "benchmarks"] {
+            try withSampleDirectory { directory in
+                try rewriteTable("performance", in: directory) { rows in
+                    rows[0]["asOfDate"] = "2026-01-02"
+                    rows[0]["initialStartDate"] = "2026-01-01"
+                    rows[0]["initialEndDate"] = "2026-01-02"
+                    rows[0]["maxYears"] = "5"
+                }
+                try rewriteTable(table, in: directory) { $0[0]["ytdReturnPercent"] = "100" }
+                XCTAssertThrowsError(try SampleCatalog.load(directory: directory)) { error in
+                    XCTAssertTrue(error.localizedDescription.contains(table + ".csv"), error.localizedDescription)
+                    XCTAssertTrue(error.localizedDescription.contains("ytdReturnPercent"), error.localizedDescription)
+                    XCTAssertTrue(error.localizedDescription.contains("maxYears"), error.localizedDescription)
+                }
+            }
+        }
+    }
+
     func testPerformanceDefaultsSelectMarketAndAccountBenchmarks() throws {
+        XCTAssertEqual(SampleData.row("performance", id: "default").string("initialPeriod"), "ytd")
         let selected = Set(SampleData.rows("benchmarks").filter { $0.bool("defaultSelected") }.map(\.id))
         XCTAssertTrue(selected.contains("sp500"))
         XCTAssertTrue(selected.contains("hsbc-reference"))
@@ -609,6 +690,7 @@ final class PortfolioTests: XCTestCase {
         let ranges = [
             performanceDate("2026-08-09")...performanceDate("2026-09-09"),
             performanceDate("2025-09-09")...performanceDate("2026-09-09"),
+            performanceDate("2026-01-01")...performanceDate("2026-09-09"),
             performanceDate("2024-04-17")...performanceDate("2026-07-23")
         ]
         for portfolioID in ["hsbc-sg-equity", "hsbc-hk-investment"] {
@@ -678,6 +760,22 @@ final class PortfolioTests: XCTestCase {
                        "An exact configured ID has priority over a migrated metadata match.")
     }
 
+    func testReferenceHoldingPriceEditsChangeItsPathWithoutChangingTheYTDTarget() throws {
+        let original = try performanceAccount("hsbc-sg-equity")
+        let range = performanceDate("2026-01-01")...performanceDate("2026-09-09")
+        let before = performanceModel(accounts: [original], range: range).history(for: "HSBC reference portfolio")
+        var edited = original
+        for index in edited.holdings.indices { edited.holdings[index].price = edited.holdings[index].averageCost }
+        let available = SampleData.accounts.map { $0.id == edited.id ? edited : $0 }
+        let model = performanceModel(accounts: [edited], availableAccounts: available, range: range)
+        let after = model.history(for: "HSBC reference portfolio")
+        XCTAssertEqual(model.referenceAccount, edited)
+        XCTAssertEqual(after.last?.value, 11.2)
+        XCTAssertEqual(after.map(\.value), model.history(for: GIVPerformanceModel.mySeriesName).map(\.value))
+        XCTAssertNotEqual(after.dropFirst().dropLast().map(\.value), before.dropFirst().dropLast().map(\.value),
+                          "Calibrated endpoints must not stop the chart from responding to changes in its actual source holdings.")
+    }
+
     func testDeletedReferenceDoesNotReappearAsFabricatedSamplePerformance() throws {
         for portfolioID in ["hsbc-sg-equity", "hsbc-hk-investment"] {
             let removed = try performanceAccount(portfolioID)
@@ -715,16 +813,18 @@ final class PortfolioTests: XCTestCase {
         }
     }
 
-    func testHSBCAccountsTrackSP500AndEndModestlyAheadOfOtherBanks() throws {
+    func testHSBCAndMarketPeriodReturnsStayAheadOfOtherBanks() throws {
         let hsbcAccounts = SampleData.accounts.filter { $0.institution == "HSBC" }
         let otherAccounts = SampleData.accounts.filter { ["DBS", "Standard Chartered"].contains($0.institution) }
         XCTAssertEqual(hsbcAccounts.count, 6)
         XCTAssertEqual(otherAccounts.count, 2)
-        let periods: [(range: ClosedRange<Date>, maximumBenchmarkGap: Double)] = [
-            (performanceDate("2026-08-09")...performanceDate("2026-09-09"), 0.8),
-            (performanceDate("2025-09-09")...performanceDate("2026-09-09"), 2.0)
+        let periods = [
+            performanceDate("2026-08-09")...performanceDate("2026-09-09"),
+            performanceDate("2025-09-09")...performanceDate("2026-09-09"),
+            performanceDate("2026-01-01")...performanceDate("2026-09-09"),
+            performanceDate("2026-06-11")...performanceDate("2026-09-09")
         ]
-        for (range, maximumBenchmarkGap) in periods {
+        for range in periods {
             let benchmark = performanceModel(accounts: [], range: range).history(for: "S&P 500")
             XCTAssertGreaterThan(benchmark.count, 2)
             XCTAssertTrue(zip(benchmark, benchmark.dropFirst()).contains { pair in pair.0.value > pair.1.value },
@@ -741,22 +841,19 @@ final class PortfolioTests: XCTestCase {
                 let series = performanceModel(accounts: [account], range: range).history(for: GIVPerformanceModel.mySeriesName)
                 XCTAssertEqual(series.count, benchmark.count)
                 XCTAssertEqual(series.first?.value, 0)
-                for index in series.indices.dropFirst() {
-                    XCTAssertLessThan(abs(series[index].value - benchmark[index].value), maximumBenchmarkGap,
-                                      "HSBC should stay close to S&P 500, without an exaggerated synthetic lead.")
-                }
                 let periodReturn = try XCTUnwrap(series.last?.value)
+                XCTAssertGreaterThan(periodReturn, benchmarkEnd)
+                XCTAssertLessThan(periodReturn - benchmarkEnd, 3.0,
+                                  "HSBC's endpoint remains near the market while its journey may differ substantially.")
                 for other in otherSeries {
                     let otherReturn = try XCTUnwrap(other.last?.value)
                     XCTAssertGreaterThan(periodReturn, otherReturn)
-                    XCTAssertLessThan(periodReturn - otherReturn, 2.0,
-                                      "The overall bank difference should remain modest; intermediate points may cross.")
                 }
             }
         }
     }
 
-    func testReferenceAndBankCurvesHaveDistinctShapesAcrossMonthYearAndCustomPeriods() throws {
+    func testReferenceAndBankCurvesHaveDistinctShapesAcrossMonthYearYTDAndCustomPeriods() throws {
         let singapore = try performanceAccount("hsbc-sg-equity")
         let hongKong = try performanceAccount("hsbc-hk-investment")
         let dbs = try performanceAccount("dbs-sg")
@@ -764,6 +861,7 @@ final class PortfolioTests: XCTestCase {
         let periods: [(name: String, range: ClosedRange<Date>)] = [
             ("month", performanceDate("2026-08-09")...performanceDate("2026-09-09")),
             ("year", performanceDate("2025-09-09")...performanceDate("2026-09-09")),
+            ("YTD", performanceDate("2026-01-01")...performanceDate("2026-09-09")),
             ("custom 7 days", performanceDate("2026-09-02")...performanceDate("2026-09-09")),
             ("custom 90 days", performanceDate("2026-06-11")...performanceDate("2026-09-09"))
         ]
@@ -773,7 +871,8 @@ final class PortfolioTests: XCTestCase {
                 ("HK reference", performanceModel(accounts: [hongKong], range: range).history(for: "HSBC reference portfolio").map(\.value)),
                 ("S&P 500", performanceModel(accounts: [], range: range).history(for: "S&P 500").map(\.value)),
                 ("DBS", performanceModel(accounts: [dbs], range: range).history(for: GIVPerformanceModel.mySeriesName).map(\.value)),
-                ("Standard Chartered", performanceModel(accounts: [standardChartered], range: range).history(for: GIVPerformanceModel.mySeriesName).map(\.value))
+                ("Standard Chartered", performanceModel(accounts: [standardChartered], range: range).history(for: GIVPerformanceModel.mySeriesName).map(\.value)),
+                ("All global accounts", performanceModel(accounts: SampleData.accounts, range: range).history(for: GIVPerformanceModel.mySeriesName).map(\.value))
             ]
             for history in histories {
                 XCTAssertGreaterThan(history.values.count, 2)
@@ -807,6 +906,37 @@ final class PortfolioTests: XCTestCase {
         }
     }
 
+    func testEveryDisplayedCurveIncludingTheGlobalPortfolioHasVisibleDrawdownsAndRecoveries() throws {
+        let singapore = try performanceAccount("hsbc-sg-equity")
+        let hongKong = try performanceAccount("hsbc-hk-investment")
+        let dbs = try performanceAccount("dbs-sg")
+        let standardChartered = try performanceAccount("standard-chartered-hk")
+        let cases: [(start: String, minimumDrawdown: Double)] = [
+            ("2026-08-09", 0.5), ("2025-09-09", 1.0), ("2026-01-01", 1.5), ("2026-06-11", 1.0)
+        ]
+        for scenario in cases {
+            let range = performanceDate(scenario.start)...performanceDate("2026-09-09")
+            let histories: [(String, [Double])] = [
+                ("SG reference", performanceModel(accounts: [singapore], range: range).history(for: "HSBC reference portfolio").map(\.value)),
+                ("HK reference", performanceModel(accounts: [hongKong], range: range).history(for: "HSBC reference portfolio").map(\.value)),
+                ("S&P 500", performanceModel(accounts: [], range: range).history(for: "S&P 500").map(\.value)),
+                ("DBS", performanceModel(accounts: [dbs], range: range).history(for: GIVPerformanceModel.mySeriesName).map(\.value)),
+                ("Standard Chartered", performanceModel(accounts: [standardChartered], range: range).history(for: GIVPerformanceModel.mySeriesName).map(\.value)),
+                ("All global accounts", performanceModel(accounts: SampleData.accounts, range: range).history(for: GIVPerformanceModel.mySeriesName).map(\.value))
+            ]
+            for (name, values) in histories {
+                let label = "\(scenario.start), \(name)"
+                XCTAssertGreaterThan(maximumDrawdown(values), scenario.minimumDrawdown,
+                                     "\(label) needs a meaningful pullback, not tiny noise around a straight line.")
+                let changes = zip(values, values.dropFirst()).map { pair in pair.1 - pair.0 }
+                let turns = zip(changes, changes.dropFirst()).filter { pair in pair.0 * pair.1 < 0 }.count
+                XCTAssertGreaterThanOrEqual(turns, 4, "\(label) needs multiple declines and recoveries.")
+                XCTAssertEqual(values.first, 0)
+                XCTAssertTrue(values.allSatisfy(\.isFinite), label)
+            }
+        }
+    }
+
     func testExternalBenchmarksAreStableAcrossAccountsMarketsAndReportingCurrencies() throws {
         let singapore = try performanceAccount("hsbc-sg-equity")
         let hongKong = try performanceAccount("hsbc-hk-investment")
@@ -828,6 +958,16 @@ final class PortfolioTests: XCTestCase {
                 }
             }
         }
+    }
+
+    private func maximumDrawdown(_ values: [Double]) -> Double {
+        var peak = -Double.infinity
+        var result = 0.0
+        for value in values {
+            peak = max(peak, value)
+            result = max(result, peak - value)
+        }
+        return result
     }
 
     private func detrendedPerformanceChanges(_ values: [Double]) -> [Double] {

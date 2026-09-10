@@ -1,5 +1,5 @@
-id,institution,annualSpreadPercent,sqrtSpreadPercent,waveAmplitude,primaryFrequency,secondaryFrequency,phaseOffset
-hsbc,HSBC,0.20,0.20,1.00,13,47,1.6
-dbs,DBS,-0.50,-0.45,0.65,16,53,3.2
-standard-chartered,Standard Chartered,-0.75,-0.60,0.75,11,37,4.6
-other,*,-0.65,-0.50,0.70,14,43,3.8
+id,institution,ytdReturnPercent,waveAmplitude,primaryFrequency,secondaryFrequency,phaseOffset,drawdownPosition,drawdownDepth,drawdownWidth,recoveryPosition
+hsbc,HSBC,11.2,3.6,13,47,1.6,0.54,7.5,0.075,0.72
+dbs,DBS,3.6,3.1,16,53,3.2,0.38,4.0,0.08,0.75
+standard-chartered,Standard Chartered,3.1,3.4,11,37,4.6,0.63,4.7,0.075,0.85
+other,*,3.3,3.2,14,43,3.8,0.46,4.2,0.08,0.78

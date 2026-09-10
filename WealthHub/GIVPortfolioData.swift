@@ -58,6 +58,27 @@ struct GIVPerformanceModel {
     let market: String
     let range: ClosedRange<Date>
 
+    static func periodRange(for period: String, asOf date: Date) -> ClosedRange<Date> {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let first: Date
+        if period == "ytd" {
+            first = calendar.date(from: calendar.dateComponents([.year], from: date)) ?? date
+        } else {
+            first = calendar.date(byAdding: period == "year" ? .year : .month, value: -1, to: date) ?? date
+        }
+        return first...date
+    }
+
+    private static let calibrationRange: ClosedRange<Date> = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        let asOf = formatter.date(from: SampleData.row("performance", id: "default").string("asOfDate"))!
+        return periodRange(for: "ytd", asOf: asOf)
+    }()
+
     private var settings: SampleRecord { SampleData.row("performance", id: "default") }
     var referenceName: String { SampleData.row("benchmarks", id: settings.string("referenceBenchmarkID")).string("name") }
     var entries: [GIVEntry] { filtered(data.entries) }
@@ -84,8 +105,9 @@ struct GIVPerformanceModel {
     }
 
     private var duration: Double {
-        min(settings.double("maxYears"), max(1, range.upperBound.timeIntervalSince(range.lowerBound) / 86_400) / 365)
+        min(settings.double("maxYears"), max(0, range.upperBound.timeIntervalSince(range.lowerBound) / 86_400) / 365)
     }
+    private var calibrationDuration: Double { Self.calibrationRange.upperBound.timeIntervalSince(Self.calibrationRange.lowerBound) / (86_400 * 365) }
     private var intervals: Int { settings.int("sampleIntervals") }
     private func filtered(_ entries: [GIVEntry]) -> [GIVEntry] {
         entries.filter { market == settings.string("allMarketsLabel") || $0.region == market }
@@ -138,22 +160,14 @@ struct GIVPerformanceModel {
             let identity = entry.holding.symbol + "|" + entry.holding.currency.rawValue + "|" + entry.holding.category.rawValue
             return total + seed(identity) * (entry.cost / cost)
         }
-        // Share the benchmark's long-term return scale, not its individual rises and falls.
-        // Bank-specific cycles and the live holdings mix create an independent return path.
-        let anchor = SampleData.row("benchmarks", id: settings.string("anchorBenchmarkID"))
-        let target = (anchor.double("annualReturnPercent") + profile.double("annualSpreadPercent") + tilt) * duration
-            + (anchor.double("sqrtReturnPercent") + profile.double("sqrtSpreadPercent")) * sqrt(duration)
+        // The configured YTD return fixes the endpoint. Live holdings affect the journey,
+        // so account edits remain visible without breaking the presentation's return targets.
         let phase = profile.double("phaseOffset") + holdingPhase * settings.double("primarySeedMultiplier")
             + seed(account.market) * 2 * .pi
-        return (0...intervals).map { index in
-            let x = Double(index) / Double(intervals)
-            let primary = sin(x * profile.double("primaryFrequency") + phase)
-            let secondary = sin(x * profile.double("secondaryFrequency") + phase * settings.double("secondarySeedMultiplier"))
-            let weight = settings.double("secondaryWeight")
-            let normalizedWave = (primary + secondary * weight) / (1 + abs(weight))
-            let wave = profile.double("waveAmplitude") * sqrt(duration) * sin(.pi * x) * normalizedWave
-            return target * x + wave
-        }
+        let shift = (seed(account.market) + holdingPhase - 1) * settings.double("eventPhaseWeight")
+        return curveValues(profile, amplitude: profile.double("waveAmplitude"),
+                           primaryFrequency: profile.double("primaryFrequency"), secondaryFrequency: profile.double("secondaryFrequency"),
+                           phase: phase, eventShift: shift, varianceDuration: duration, holdingTilt: tilt)
     }
 
     private func seed(_ label: String) -> Double {
@@ -163,14 +177,44 @@ struct GIVPerformanceModel {
     }
 
     private func benchmarkValues(_ benchmark: SampleRecord) -> [Double] {
-        let target = benchmark.double("annualReturnPercent") * duration + benchmark.double("sqrtReturnPercent") * sqrt(duration)
-        let phase = seed(benchmark.string("name"))
+        curveValues(benchmark, amplitude: benchmark.double("amplitude"),
+                    primaryFrequency: settings.double("primaryFrequency"), secondaryFrequency: settings.double("secondaryFrequency"),
+                    phase: seed(benchmark.string("name")) * settings.double("primarySeedMultiplier"), eventShift: 0,
+                    varianceDuration: max(settings.double("minDuration"), duration))
+    }
+
+    private func curveValues(_ profile: SampleRecord, amplitude: Double, primaryFrequency: Double,
+                             secondaryFrequency: Double, phase: Double, eventShift: Double,
+                             varianceDuration: Double, holdingTilt: Double = 0) -> [Double] {
+        guard duration > 0 else { return Array(repeating: 0, count: intervals + 1) }
+        let ratio = duration / calibrationDuration
+        // The full YTD range uses the configured value directly to retain an exact endpoint.
+        let ytdReturn = profile.double("ytdReturnPercent")
+        let target = ratio == 1 ? ytdReturn : expm1(log1p(ytdReturn / 100) * ratio) * 100
+        let varianceScale = sqrt(varianceDuration / calibrationDuration)
+        let drawdown = profile.double("drawdownPosition") + eventShift
+        let recovery = profile.double("recoveryPosition") + eventShift
+        let depth = profile.double("drawdownDepth")
+        let width = profile.double("drawdownWidth")
+        let weight = settings.double("secondaryWeight")
         return (0...intervals).map { index in
+            if index == 0 { return 0 }
+            if index == intervals { return target }
             let x = Double(index) / Double(intervals)
-            let primary = sin(x * settings.double("primaryFrequency") + phase * settings.double("primarySeedMultiplier"))
-            let secondary = sin(x * settings.double("secondaryFrequency") + phase * settings.double("secondarySeedMultiplier"))
-            let wave = (primary + secondary * settings.double("secondaryWeight")) * sin(x * .pi) * benchmark.double("amplitude") * sqrt(max(settings.double("minDuration"), duration))
-            return target * x + wave
+            let primary = sin(x * primaryFrequency + phase)
+            let secondary = sin(x * secondaryFrequency + phase * settings.double("secondarySeedMultiplier"))
+            let cycle = amplitude * sin(.pi * x) * (primary + secondary * weight) / (1 + abs(weight))
+            let retreat = depth * pulse(x, center: drawdown, width: width)
+            let rebound = settings.double("recoveryStrength") * depth * pulse(x, center: recovery, width: width * 1.5)
+            let progress = x + settings.double("trendVariation") * sin(2 * .pi * x + phase) * x * (1 - x)
+            let holdingAdjustment = holdingTilt * ratio * 4 * x * (1 - x)
+            return target * progress + varianceScale * (cycle - retreat + rebound) + holdingAdjustment
         }
+    }
+
+    /// A local decline/recovery fades to zero at both endpoints, without moving the YTD target.
+    private func pulse(_ x: Double, center: Double, width: Double) -> Double {
+        func gaussian(_ position: Double) -> Double { exp(-0.5 * pow((position - center) / width, 2)) }
+        return gaussian(x) - (1 - x) * gaussian(0) - x * gaussian(1)
     }
 }
