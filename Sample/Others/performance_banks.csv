@@ -1,5 +1,5 @@
-id,institution,annualSpreadPercent,trackingAmplitude
-hsbc,HSBC,0.20,0.35
-dbs,DBS,-0.65,0.10
-standard-chartered,Standard Chartered,-0.85,0.12
-other,*,-0.75,0.12
+id,institution,annualSpreadPercent,sqrtSpreadPercent,waveAmplitude,primaryFrequency,secondaryFrequency,phaseOffset
+hsbc,HSBC,0.20,0.20,1.00,13,47,1.6
+dbs,DBS,-0.50,-0.45,0.65,16,53,3.2
+standard-chartered,Standard Chartered,-0.75,-0.60,0.75,11,37,4.6
+other,*,-0.65,-0.50,0.70,14,43,3.8

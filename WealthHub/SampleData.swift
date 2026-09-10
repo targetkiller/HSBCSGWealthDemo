@@ -99,7 +99,7 @@ struct SampleCatalog {
         "wealth_scenario_targets": "id,scenarioID,category,currency",
         "wealth_regions": "id,name,color",
         "performance": "id,asOfDate,initialStartDate,initialEndDate,initialMarket,initialPeriod,initialMetric,allMarketsLabel,marketFilters,sampleIntervals,seedModulus,maxYears,minDuration,primaryFrequency,primarySeedMultiplier,secondaryFrequency,secondarySeedMultiplier,secondaryWeight,anchorBenchmarkID,referenceBenchmarkID,defaultReferenceMarket,sgReferencePortfolioID,hkReferencePortfolioID,holdingTiltWeight,maxHoldingTiltPercent",
-        "performance_banks": "id,institution,annualSpreadPercent,trackingAmplitude",
+        "performance_banks": "id,institution,annualSpreadPercent,sqrtSpreadPercent,waveAmplitude,primaryFrequency,secondaryFrequency,phaseOffset",
         "benchmarks": "id,name,annualReturnPercent,sqrtReturnPercent,amplitude,colorHex,symbol,defaultSelected",
         "analytics": "id,currencyIllustrationShock,concentrationThreshold,defaultScenarioID",
         "asset_profiles": "id,riskScore,liquidityScore,riskLabel,defaultSector",
@@ -440,7 +440,10 @@ struct SampleCatalog {
             try nonempty(row, "institution")
             try require(performanceInstitutions.insert(row.string("institution").lowercased()).inserted, row, "Each institution needs a single performance profile.")
             try number(row, "annualSpreadPercent", min: -20, max: 20)
-            try number(row, "trackingAmplitude", min: 0, max: 5)
+            try number(row, "sqrtSpreadPercent", min: -20, max: 20)
+            try number(row, "waveAmplitude", min: 0, max: 5)
+            for key in ["primaryFrequency", "secondaryFrequency"] { try number(row, key, min: Double.leastNormalMagnitude, max: 100) }
+            try number(row, "phaseOffset", min: -100, max: 100)
         }
         try require(performanceInstitutions.contains("*"), performance, "performance_banks.csv needs an institution '*' fallback profile.")
         for row in rows("benchmarks") {

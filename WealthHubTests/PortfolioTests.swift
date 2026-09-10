@@ -715,15 +715,16 @@ final class PortfolioTests: XCTestCase {
         }
     }
 
-    func testHSBCAccountsTrackSP500AndStayModestlyAheadOfOtherBanks() throws {
+    func testHSBCAccountsTrackSP500AndEndModestlyAheadOfOtherBanks() throws {
         let hsbcAccounts = SampleData.accounts.filter { $0.institution == "HSBC" }
         let otherAccounts = SampleData.accounts.filter { ["DBS", "Standard Chartered"].contains($0.institution) }
         XCTAssertEqual(hsbcAccounts.count, 6)
         XCTAssertEqual(otherAccounts.count, 2)
-        for range in [
-            performanceDate("2026-08-09")...performanceDate("2026-09-09"),
-            performanceDate("2025-09-09")...performanceDate("2026-09-09")
-        ] {
+        let periods: [(range: ClosedRange<Date>, maximumBenchmarkGap: Double)] = [
+            (performanceDate("2026-08-09")...performanceDate("2026-09-09"), 0.8),
+            (performanceDate("2025-09-09")...performanceDate("2026-09-09"), 2.0)
+        ]
+        for (range, maximumBenchmarkGap) in periods {
             let benchmark = performanceModel(accounts: [], range: range).history(for: "S&P 500")
             XCTAssertGreaterThan(benchmark.count, 2)
             XCTAssertTrue(zip(benchmark, benchmark.dropFirst()).contains { pair in pair.0.value > pair.1.value },
@@ -731,18 +732,76 @@ final class PortfolioTests: XCTestCase {
             let otherSeries = otherAccounts.map {
                 performanceModel(accounts: [$0], range: range).history(for: GIVPerformanceModel.mySeriesName)
             }
+            let benchmarkEnd = try XCTUnwrap(benchmark.last?.value)
+            for other in otherSeries {
+                XCTAssertLessThan(try XCTUnwrap(other.last?.value), benchmarkEnd,
+                                  "Other banks should lag the market over the selected period, while remaining free to cross it along the way.")
+            }
             for account in hsbcAccounts {
                 let series = performanceModel(accounts: [account], range: range).history(for: GIVPerformanceModel.mySeriesName)
                 XCTAssertEqual(series.count, benchmark.count)
                 XCTAssertEqual(series.first?.value, 0)
                 for index in series.indices.dropFirst() {
-                    XCTAssertLessThan(abs(series[index].value - benchmark[index].value), 1.0,
+                    XCTAssertLessThan(abs(series[index].value - benchmark[index].value), maximumBenchmarkGap,
                                       "HSBC should stay close to S&P 500, without an exaggerated synthetic lead.")
-                    for other in otherSeries {
-                        XCTAssertGreaterThan(series[index].value, other[index].value)
-                        XCTAssertLessThan(series[index].value - other[index].value, 1.5,
-                                          "The difference between banks should remain modest over a year.")
-                    }
+                }
+                let periodReturn = try XCTUnwrap(series.last?.value)
+                for other in otherSeries {
+                    let otherReturn = try XCTUnwrap(other.last?.value)
+                    XCTAssertGreaterThan(periodReturn, otherReturn)
+                    XCTAssertLessThan(periodReturn - otherReturn, 2.0,
+                                      "The overall bank difference should remain modest; intermediate points may cross.")
+                }
+            }
+        }
+    }
+
+    func testReferenceAndBankCurvesHaveDistinctShapesAcrossMonthYearAndCustomPeriods() throws {
+        let singapore = try performanceAccount("hsbc-sg-equity")
+        let hongKong = try performanceAccount("hsbc-hk-investment")
+        let dbs = try performanceAccount("dbs-sg")
+        let standardChartered = try performanceAccount("standard-chartered-hk")
+        let periods: [(name: String, range: ClosedRange<Date>)] = [
+            ("month", performanceDate("2026-08-09")...performanceDate("2026-09-09")),
+            ("year", performanceDate("2025-09-09")...performanceDate("2026-09-09")),
+            ("custom 7 days", performanceDate("2026-09-02")...performanceDate("2026-09-09")),
+            ("custom 90 days", performanceDate("2026-06-11")...performanceDate("2026-09-09"))
+        ]
+        for (period, range) in periods {
+            let histories: [(name: String, values: [Double])] = [
+                ("SG reference", performanceModel(accounts: [singapore], range: range).history(for: "HSBC reference portfolio").map(\.value)),
+                ("HK reference", performanceModel(accounts: [hongKong], range: range).history(for: "HSBC reference portfolio").map(\.value)),
+                ("S&P 500", performanceModel(accounts: [], range: range).history(for: "S&P 500").map(\.value)),
+                ("DBS", performanceModel(accounts: [dbs], range: range).history(for: GIVPerformanceModel.mySeriesName).map(\.value)),
+                ("Standard Chartered", performanceModel(accounts: [standardChartered], range: range).history(for: GIVPerformanceModel.mySeriesName).map(\.value))
+            ]
+            for history in histories {
+                XCTAssertGreaterThan(history.values.count, 2)
+                let changes = zip(history.values, history.values.dropFirst()).map { pair in pair.1 - pair.0 }
+                XCTAssertTrue(changes.contains { $0 > 0 }, "\(period), \(history.name) needs upward movement.")
+                XCTAssertTrue(changes.contains { $0 < 0 }, "\(period), \(history.name) needs visible pullbacks.")
+            }
+            for firstIndex in histories.indices {
+                for secondIndex in histories.indices where secondIndex > firstIndex {
+                    let first = histories[firstIndex]
+                    let second = histories[secondIndex]
+                    let pairName = "\(period): \(first.name) vs \(second.name)"
+                    XCTAssertEqual(first.values.count, second.values.count, pairName)
+                    let firstChanges = detrendedPerformanceChanges(first.values)
+                    let secondChanges = detrendedPerformanceChanges(second.values)
+                    let pairs = Array(zip(firstChanges, secondChanges))
+                    let firstEnergy = firstChanges.reduce(0) { $0 + $1 * $1 }
+                    let secondEnergy = secondChanges.reduce(0) { $0 + $1 * $1 }
+                    let normalizer = sqrt(firstEnergy * secondEnergy)
+                    XCTAssertGreaterThan(normalizer, 0, pairName)
+                    guard normalizer > 0 else { continue }
+                    let correlation = pairs.reduce(0) { $0 + $1.0 * $1.1 } / normalizer
+                    let oppositeDirections = pairs.filter { $0.0 * $0.1 < 0 }.count
+                    let oppositeFraction = Double(oppositeDirections) / Double(pairs.count)
+                    XCTAssertLessThan(correlation, 0.95,
+                                      "\(pairName) must differ in shape, rather than reuse one curve with a different slope or amplitude.")
+                    XCTAssertGreaterThanOrEqual(oppositeFraction, 0.15,
+                                                "\(pairName) should have distinct fluctuations across multiple intervals.")
                 }
             }
         }
@@ -769,6 +828,13 @@ final class PortfolioTests: XCTestCase {
                 }
             }
         }
+    }
+
+    private func detrendedPerformanceChanges(_ values: [Double]) -> [Double] {
+        let changes = zip(values, values.dropFirst()).map { pair in pair.1 - pair.0 }
+        guard !changes.isEmpty else { return [] }
+        let mean = changes.reduce(0, +) / Double(changes.count)
+        return changes.map { $0 - mean }
     }
 
     private func performanceAccount(_ portfolioID: String) throws -> InvestmentAccount {

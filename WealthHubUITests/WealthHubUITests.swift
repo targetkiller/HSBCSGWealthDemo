@@ -404,10 +404,28 @@ final class WealthHubUITests: XCTestCase {
         selectOnlyGIVAccount("10000000-0000-4000-8000-000000000002", market: "sg", in: app)
         app.buttons["giv.tab.Performance"].tap()
         assertHSBCReference("HSBC reference: (068) Equity Investment Account · Singapore", in: app)
+        attachScreenshot(app, name: "Reference SG - Equity Investment Account overlaps HSBC reference")
 
         selectOnlyGIVAccount("10000000-0000-4000-8000-000000000006", market: "hk", in: app)
         assertHSBCReference("HSBC reference: HSBC One Investment Services · Hong Kong", in: app)
-        attachScreenshot(app, name: "Hong Kong account with default HSBC reference")
+        attachScreenshot(app, name: "Reference HK - HSBC One Investment Services overlaps HSBC reference")
+    }
+
+    func testOtherBankPerformanceKeepsHSBCAndMarketBenchmarksEnabled() throws {
+        let app = launch()
+        app.buttons["wealth.viewDetails"].tap()
+        XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 5))
+        selectOnlyGIVAccount("10000000-0000-4000-8000-000000000004", market: "sg", in: app)
+        XCTAssertTrue(app.buttons["giv.accounts"].label.contains("DBS Account"))
+        app.buttons["giv.tab.Performance"].tap()
+
+        assertHSBCReference("HSBC reference: (068) Equity Investment Account · Singapore", in: app)
+        let marketBenchmark = app.buttons["giv.performance.benchmark.S&P 500"]
+        XCTAssertTrue(marketBenchmark.isEnabled)
+        XCTAssertTrue(marketBenchmark.isSelected, "The market benchmark must remain selected alongside HSBC when viewing only DBS.")
+        let chart = app.descendants(matching: .any)["giv.performance.chart"].firstMatch
+        XCTAssertTrue(chart.exists)
+        attachScreenshot(app, name: "Reference SG - DBS versus HSBC reference and S&P 500")
     }
 
     func testHSBCReferenceFollowsPerformanceMarket() throws {

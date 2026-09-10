@@ -134,19 +134,25 @@ struct GIVPerformanceModel {
         let returnRate = sorted.reduce(0) { $0 + $1.profit } / cost * 100
         let limit = settings.double("maxHoldingTiltPercent")
         let tilt = min(limit, max(-limit, returnRate * settings.double("holdingTiltWeight")))
-        let phase = sorted.reduce(0) { total, entry in
+        let holdingPhase = sorted.reduce(0) { total, entry in
             let identity = entry.holding.symbol + "|" + entry.holding.currency.rawValue + "|" + entry.holding.category.rawValue
             return total + seed(identity) * (entry.cost / cost)
         }
-        let anchor = benchmarkValues(SampleData.row("benchmarks", id: settings.string("anchorBenchmarkID")))
+        // Share the benchmark's long-term return scale, not its individual rises and falls.
+        // Bank-specific cycles and the live holdings mix create an independent return path.
+        let anchor = SampleData.row("benchmarks", id: settings.string("anchorBenchmarkID"))
+        let target = (anchor.double("annualReturnPercent") + profile.double("annualSpreadPercent") + tilt) * duration
+            + (anchor.double("sqrtReturnPercent") + profile.double("sqrtSpreadPercent")) * sqrt(duration)
+        let phase = profile.double("phaseOffset") + holdingPhase * settings.double("primarySeedMultiplier")
+            + seed(account.market) * 2 * .pi
         return (0...intervals).map { index in
             let x = Double(index) / Double(intervals)
-            let primary = sin(x * settings.double("primaryFrequency") + phase * settings.double("primarySeedMultiplier"))
-            let secondary = sin(x * settings.double("secondaryFrequency") + phase * settings.double("secondarySeedMultiplier"))
+            let primary = sin(x * profile.double("primaryFrequency") + phase)
+            let secondary = sin(x * profile.double("secondaryFrequency") + phase * settings.double("secondarySeedMultiplier"))
             let weight = settings.double("secondaryWeight")
             let normalizedWave = (primary + secondary * weight) / (1 + abs(weight))
-            let residual = profile.double("trackingAmplitude") * duration * x * sin(.pi * x) * normalizedWave
-            return anchor[index] + (profile.double("annualSpreadPercent") + tilt) * duration * x + residual
+            let wave = profile.double("waveAmplitude") * sqrt(duration) * sin(.pi * x) * normalizedWave
+            return target * x + wave
         }
     }
 

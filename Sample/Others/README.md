@@ -18,7 +18,7 @@ Daily account, holding, and portfolio-value changes belong in **[Portfolios.csv]
 | [asset_profiles.csv](asset_profiles.csv) | Asset-class `id`, illustrative `riskScore` and `liquidityScore`, `riskLabel`, and fallback `defaultSector`. All supported asset classes must be present. |
 | [regions.csv](regions.csv) | GIV region labels, matching `aliases`, and normalized map coordinates `mapX` and `mapY`. |
 | [performance.csv](performance.csv) | One `default` row defines fixed `asOfDate`, initial dates and filters, the anchor benchmark, the SG/HK reference accounts, and bounded illustrative-history parameters. See [Performance and reference portfolios](#performance-and-reference-portfolios). |
-| [performance_banks.csv](performance_banks.csv) | Per-bank illustrative `annualSpreadPercent` and `trackingAmplitude`. `institution` matches an account's bank; `*` is the fallback for other banks. |
+| [performance_banks.csv](performance_banks.csv) | Per-bank illustrative return spreads, wave amplitude, frequencies, and phase. `institution` matches an account's bank; `*` is the fallback for other banks. Each account has its own rises and falls rather than copying the index curve. |
 | [benchmarks.csv](benchmarks.csv) | Benchmark names, `colorHex`, chart `symbol`, and `defaultSelected`. Market indexes use independent curve parameters; the HSBC reference row leaves those parameters blank because its curve comes from the current mapped account. |
 | [analytics.csv](analytics.csv) | One `default` row defines `currencyIllustrationShock`, `concentrationThreshold`, and `defaultScenarioID`, referring to `scenarios.id`. |
 | [scenarios.csv](scenarios.csv) | GIV stress scenarios. `currencies`, `assetClasses`, and `regions` select exposure; `shock` defines signed change. `skipMatchingReportingCurrency` controls the reporting-currency exception. |
@@ -82,23 +82,38 @@ HSBC reference portfolio is selected by default through `benchmarks.defaultSelec
 
 | `performance.csv` field | Meaning |
 | --- | --- |
-| `anchorBenchmarkID` | Market-index row in `benchmarks.csv` followed by the illustrative account histories; currently `sp500` (S&P 500). |
+| `anchorBenchmarkID` | Market-index row in `benchmarks.csv` providing the return scale for account-period targets; currently `sp500` (S&P 500). Account histories do not copy its wave shape. |
 | `referenceBenchmarkID` | Account-based legend row; currently `hsbc-reference`. Keep its `annualReturnPercent`, `sqrtReturnPercent`, and `amplitude` cells blank in `benchmarks.csv`. |
 | `defaultReferenceMarket` | Reference market when the selected accounts span markets or have no SG/HK match; currently `Singapore`. |
 | `sgReferencePortfolioID` | `portfolioID` in `Portfolios.csv` for the SG reference; currently `hsbc-sg-equity`, the Equity Investment Account. |
 | `hkReferencePortfolioID` | `portfolioID` in `Portfolios.csv` for the HK reference; currently `hsbc-hk-investment`, HSBC One Investment Services. |
 | `holdingTiltWeight` | Small influence of the account's eligible holdings' current return on illustrative annual drift; currently `0.005`. |
 | `maxHoldingTiltPercent` | Absolute cap on that influence, in percentage points; currently `0.05`. |
-| `sampleIntervals`, `maxYears`, `minDuration` | Number of intervals, maximum modelled duration in years, and minimum duration used to scale index-curve oscillation. |
-| `seedModulus`, `primaryFrequency`, `primarySeedMultiplier`, `secondaryFrequency`, `secondarySeedMultiplier`, `secondaryWeight` | Deterministic wave-shape inputs; these provide repeatable illustrative fluctuations. |
+| `sampleIntervals`, `maxYears`, `minDuration` | Number of intervals, maximum modelled duration in years, and minimum duration used to scale index-curve oscillation (about one day by default, so short custom periods retain appropriately smaller waves). |
+| `seedModulus`, `primarySeedMultiplier`, `secondarySeedMultiplier`, `secondaryWeight` | Deterministic seed and wave-mixing inputs. An account's holding mix and market contribute to its phase; the same inputs reproduce the same curve. |
+| `primaryFrequency`, `secondaryFrequency` | Market-index wave frequencies. Account histories use the frequencies in `performance_banks.csv` instead. |
 
 An explicit **Singapore** or **Hong Kong** filter in Performance selects the corresponding reference market. Otherwise a selection containing only Singapore accounts uses the SG reference, and a selection containing only Hong Kong accounts uses the HK reference; mixed or other selections use `defaultReferenceMarket`. The account selector's market describes the account's market, while Performance filters eligible holdings by their region. The same holding-region filter applies to the selected portfolio and reference. Selecting only the mapped account therefore makes My total return and HSBC reference portfolio overlap at every chart point. The reference follows the current saved account even if its display name changes. If that account was deleted locally, the reference is unavailable rather than being restored from the original sample.
 
-Each account history follows the same independent S&P 500 path plus a small, configurable bank offset and bounded fluctuations. `annualSpreadPercent` is an annual percentage-point offset: the supplied HSBC value `0.20` is slightly above the anchor; DBS `-0.65`, Standard Chartered `-0.85`, and the fallback `-0.75` are modestly below it. `trackingAmplitude` controls how much an account may move around that path, with the variation disappearing at the range endpoints. The account's current holdings add only the capped tilt above. Multiple selected accounts are weighted by their eligible invested cost. Selecting accounts or enabling the reference never changes an index benchmark's curve.
+Each account history has an independent wave shape while keeping its period-end target on a similar scale to S&P 500. The bank settings control both the target and the timing of rises and falls:
+
+| `performance_banks.csv` field | Meaning |
+| --- | --- |
+| `id` | Unique profile key. |
+| `institution` | Account bank name, matched without case sensitivity. Exactly one `*` fallback profile is required. |
+| `annualSpreadPercent` | Annual target offset in percentage points, multiplied by the duration in years. |
+| `sqrtSpreadPercent` | Additional target offset multiplied by the square root of the duration in years. This keeps short-period differences visible without requiring a large annual offset. |
+| `waveAmplitude` | Strength of the account's independent fluctuations, scaled by the square root of the actual duration. Variation fades to zero at the range endpoints. |
+| `primaryFrequency`, `secondaryFrequency` | Frequencies of the account's two wave components. Different values change how often rises and pullbacks occur over the selected range. |
+| `phaseOffset` | Phase in radians, shifting where rises and pullbacks occur. The current holding mix and account market also influence the phase. |
+
+With duration `d` measured in years, the period-end target is `(anchor annual return + annualSpreadPercent + capped holdings tilt) × d + (anchor square-root return + sqrtSpreadPercent) × √d`. The curve moves around the line from zero to this target using its own frequencies, phase, and amplitude. Account waves use the actual duration, including short custom date ranges; `performance.minDuration` applies only to index-curve oscillation. The account's current holdings influence the capped tilt and wave phase, so edited holdings are reflected in both the account curve and its mapped reference.
+
+The supplied HSBC spreads are `0.20` and `0.20`; DBS uses `-0.50` and `-0.45`, Standard Chartered `-0.75` and `-0.60`, and the fallback `-0.65` and `-0.50`. These produce a modestly higher HSBC period-end return and other-bank period-end returns below both HSBC and S&P 500. Curves may cross locally along the way: their rises, falls, and recovery timing are intentionally different. Multiple selected accounts are weighted by their eligible invested cost. Selecting accounts or enabling the reference never changes an index benchmark's curve.
 
 These settings change the **illustrative Performance chart**, not holding prices, average costs, account values, or unrealised gain/loss. TWRR and MWRR remain equal because the demo models no external cash flows. The supplied bank offsets describe a presentation scenario, not actual bank performance or live market history.
 
-BA 日常仍只需修改 `Portfolios.csv` 的账户和持仓。SG/HK reference 分别读取上表指定的当前账户，单选该账户时两条线重叠。需要调整演示曲线的相对表现时，再修改 `performance_banks.csv`；这些参数不会修改组合价值或未实现盈亏。
+BA 日常仍只需修改 `Portfolios.csv` 的账户和持仓。SG/HK reference 分别读取上表指定的当前账户，单选该账户时两条线精确重叠。HSBC reference、S&P 500 和他行曲线采用不同的涨跌节奏；他行期末收益略低，途中允许局部交叉。需要调整目标差距时修改 `annualSpreadPercent` 和 `sqrtSpreadPercent`，调整波动大小时修改 `waveAmplitude`，调整转折节奏时修改频率和 `phaseOffset`。这些参数不会修改组合价值或未实现盈亏。
 
 ## Editing and validation
 
