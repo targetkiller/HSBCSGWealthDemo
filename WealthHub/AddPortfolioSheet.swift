@@ -8,6 +8,7 @@ struct AddPortfolioSheet: View {
     @Environment(\.dismiss) private var dismiss
     var onComplete: (Set<UUID>) -> Void
 
+    @State private var activeStep: PortfolioStep?
     @State private var path: [PortfolioStep] = []
     @State private var rootHeight: CGFloat = 280
     @State private var selectedHSBC = Set<UUID>()
@@ -20,98 +21,125 @@ struct AddPortfolioSheet: View {
     }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Add a portfolio")
-                    .font(.system(size: 24, weight: .regular))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .overlay(alignment: .topTrailing) {
-                        Button { dismiss() } label: {
-                            Image(systemName: "xmark").font(.system(size: 19, weight: .light))
-                                .frame(width: 44, height: 44).contentShape(Rectangle())
+        portfolioOptions
+            .foregroundStyle(Theme.ink)
+            .presentationDetents([.height(rootHeight)])
+            .presentationDragIndicator(.hidden)
+            .presentationCornerRadius(8)
+            .sheet(item: $activeStep, onDismiss: { path.removeAll() }) { step in
+                // Present the destination at its final height. Resizing the chooser while
+                // pushing used to leave no space above the destination's bottom actions.
+                NavigationStack(path: $path) {
+                    destination(for: step)
+                        .toolbar { flowToolbar }
+                        .navigationDestination(for: PortfolioStep.self) { nextStep in
+                            destination(for: nextStep)
+                                .toolbar { flowToolbar }
                         }
-                        .buttonStyle(.plain)
-                        .offset(x: 10, y: -10)
-                        .accessibilityLabel("Close")
-                        .accessibilityIdentifier("portfolio.add.close")
-                    }
-                    .padding(.bottom, 16)
-                Text("Connect an account or upload your portfolio data to get artificial intelligence analysis.")
-                    .font(.system(size: 16))
-                    .foregroundStyle(Theme.muted)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, 8)
+                }
+                .foregroundStyle(Theme.ink)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
+                .presentationCornerRadius(8)
+            }
+    }
 
-                portfolioOption("Add my global HSBC account", icon: "creditcard", id: "hsbc") {
-                    selectedHSBC = Set(hsbcAccounts.map(\.id))
-                    path.append(.hsbc)
-                }
-                Divider().overlay(Theme.line.opacity(0.5))
-                portfolioOption("Connect to other bank account", icon: "building.2.crop.circle", id: "bank") {
-                    path.append(.bank)
-                }
-                Divider().overlay(Theme.line.opacity(0.5))
-                portfolioOption("Upload or scan a statement", icon: "square.and.arrow.up", id: "statement") {
-                    path.append(.statement)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 24)
-            .padding(.bottom, 6)
-            .background {
-                GeometryReader { geometry in
-                    Color.clear.preference(key: PortfolioSheetHeightKey.self, value: geometry.size.height)
-                }
-            }
-            .onPreferenceChange(PortfolioSheetHeightKey.self) { height in
-                if height > 0 && abs(rootHeight - height) > 1 { rootHeight = ceil(height) }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(.white)
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar(path.isEmpty ? .hidden : .visible, for: .navigationBar)
-            .navigationDestination(for: PortfolioStep.self) { step in
-                switch step {
-                case .hsbc:
-                    GlobalHSBCSelection(accounts: hsbcAccounts, selection: $selectedHSBC) {
-                        finish(ids: selectedHSBC.intersection(Set(hsbcAccounts.map(\.id))))
-                    }
-                case .bank:
-                    OtherBankPortfolioConnection { account in finish(account: account) }
-                case .statement:
-                    PortfolioStatementUpload(onCancel: { dismiss() }) { holdings, source in
-                        extractedHoldings = holdings
-                        statementSource = source
-                        path.append(.extracted)
-                    }
-                case .extracted:
-                    ExtractedPortfolioReview(holdings: $extractedHoldings, source: statementSource, onCancel: { dismiss() }) {
-                        let account = InvestmentAccount(
-                            name: "Statement portfolio", institution: "Statement", currency: .HKD,
-                            colorIndex: store.accounts.count, note: "Imported from \(statementSource)",
-                            market: "Hong Kong", holdings: extractedHoldings
-                        )
-                        finish(account: account)
-                    }
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if !path.isEmpty {
-                        Button("Close", systemImage: "xmark") { dismiss() }
-                            .labelStyle(.iconOnly)
-                            .foregroundStyle(Theme.ink)
-                            .accessibilityIdentifier("portfolio.add.close")
-                    }
-                }
+    @ToolbarContentBuilder
+    private var flowToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            if path.isEmpty {
+                Button("Back", systemImage: "chevron.left") { activeStep = nil }
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(Theme.ink)
+                    .accessibilityIdentifier("portfolio.flow.back")
             }
         }
-        .foregroundStyle(Theme.ink)
-        .presentationDetents(path.isEmpty ? [.height(rootHeight)] : [.large])
-        .presentationDragIndicator(.hidden)
-        .presentationCornerRadius(8)
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Close", systemImage: "xmark") { dismiss() }
+                .labelStyle(.iconOnly)
+                .foregroundStyle(Theme.ink)
+                .accessibilityIdentifier("portfolio.add.close")
+        }
+    }
+
+    private var portfolioOptions: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Add a portfolio")
+                .font(.system(size: 24, weight: .regular))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .topTrailing) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").font(.system(size: 19, weight: .light))
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .offset(x: 10, y: -10)
+                    .accessibilityLabel("Close")
+                    .accessibilityIdentifier("portfolio.add.close")
+                }
+                .padding(.bottom, 16)
+            Text("Connect an account or upload your portfolio data to get artificial intelligence analysis.")
+                .font(.system(size: 16))
+                .foregroundStyle(Theme.muted)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 8)
+
+            portfolioOption("Add my global HSBC account", icon: "creditcard", id: "hsbc") {
+                selectedHSBC = Set(hsbcAccounts.map(\.id))
+                activeStep = .hsbc
+            }
+            Divider().overlay(Theme.line.opacity(0.5))
+            portfolioOption("Connect to other bank account", icon: "building.2.crop.circle", id: "bank") {
+                activeStep = .bank
+            }
+            Divider().overlay(Theme.line.opacity(0.5))
+            portfolioOption("Upload or scan a statement", icon: "square.and.arrow.up", id: "statement") {
+                activeStep = .statement
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 24)
+        .padding(.bottom, 6)
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(key: PortfolioSheetHeightKey.self, value: geometry.size.height)
+            }
+        }
+        .onPreferenceChange(PortfolioSheetHeightKey.self) { height in
+            if activeStep == nil && height > 0 && abs(rootHeight - height) > 1 {
+                rootHeight = ceil(height)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(.white)
+    }
+
+    @ViewBuilder
+    private func destination(for step: PortfolioStep) -> some View {
+        switch step {
+        case .hsbc:
+            GlobalHSBCSelection(accounts: hsbcAccounts, selection: $selectedHSBC) {
+                finish(ids: selectedHSBC.intersection(Set(hsbcAccounts.map(\.id))))
+            }
+        case .bank:
+            OtherBankPortfolioConnection { account in finish(account: account) }
+        case .statement:
+            PortfolioStatementUpload(onCancel: { dismiss() }) { holdings, source in
+                extractedHoldings = holdings
+                statementSource = source
+                path.append(.extracted)
+            }
+        case .extracted:
+            ExtractedPortfolioReview(holdings: $extractedHoldings, source: statementSource, onCancel: { dismiss() }) {
+                let account = InvestmentAccount(
+                    name: "Statement portfolio", institution: "Statement", currency: .HKD,
+                    colorIndex: store.accounts.count, note: "Imported from \(statementSource)",
+                    market: "Hong Kong", holdings: extractedHoldings
+                )
+                finish(account: account)
+            }
+        }
     }
 
     private func portfolioOption(_ title: String, icon: String, id: String, action: @escaping () -> Void) -> some View {
@@ -145,7 +173,10 @@ private struct PortfolioSheetHeightKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
-private enum PortfolioStep: Hashable { case hsbc, bank, statement, extracted }
+private enum PortfolioStep: String, Hashable, Identifiable {
+    case hsbc, bank, statement, extracted
+    var id: String { rawValue }
+}
 
 private struct GlobalHSBCSelection: View {
     let accounts: [InvestmentAccount]

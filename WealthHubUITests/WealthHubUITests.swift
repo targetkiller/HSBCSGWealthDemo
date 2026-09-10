@@ -161,6 +161,47 @@ final class WealthHubUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 3), .completed)
     }
 
+    func testPortfolioEntryPagesReturnToCompactChooser() throws {
+        let app = launch()
+        openAddPortfolio(in: app)
+        let chooserTitle = app.staticTexts["Add a portfolio"]
+        let chooserTop = chooserTitle.frame.minY
+
+        app.buttons["portfolio.add.statement"].tap()
+        let introduction = app.staticTexts["How to provide your portfolio?"]
+        XCTAssertTrue(introduction.waitForExistence(timeout: 3))
+        XCTAssertTrue(introduction.isHittable)
+        XCTAssertTrue(app.buttons["portfolio.statement.upload"].isHittable)
+        attachScreenshot(app, name: "Statement introduction visible")
+
+        app.buttons["portfolio.flow.back"].tap()
+        XCTAssertTrue(app.buttons["portfolio.add.bank"].waitForExistence(timeout: 3))
+        XCTAssertTrue(chooserTitle.isHittable)
+        XCTAssertEqual(chooserTitle.frame.minY, chooserTop, accuracy: 3)
+
+        app.buttons["portfolio.add.bank"].tap()
+        let chooseBank = app.staticTexts["Choose a bank"]
+        XCTAssertTrue(chooseBank.waitForExistence(timeout: 3))
+        XCTAssertTrue(chooseBank.isHittable)
+        XCTAssertTrue(app.buttons["portfolio.bank.DBS"].isHittable)
+        let connect = app.buttons["portfolio.bank.connect"]
+        XCTAssertFalse(connect.isEnabled)
+        attachScreenshot(app, name: "Bank choices visible")
+        let consent = app.switches["portfolio.bank.consent"]
+        scrollUntilHittable(consent, in: app)
+        consent.tap()
+        XCTAssertTrue(connect.isEnabled)
+
+        app.buttons["portfolio.flow.back"].tap()
+        XCTAssertTrue(app.buttons["portfolio.add.bank"].waitForExistence(timeout: 3))
+        XCTAssertEqual(chooserTitle.frame.minY, chooserTop, accuracy: 3)
+        app.buttons["portfolio.add.bank"].tap()
+        XCTAssertTrue(connect.waitForExistence(timeout: 3))
+        XCTAssertFalse(connect.isEnabled, "Reopening a bank connection must start with fresh consent.")
+        app.navigationBars["Other bank account"].buttons["portfolio.add.close"].tap()
+        XCTAssertTrue(app.buttons["banking.tab.wealth"].isHittable)
+    }
+
     func testOutlinedCancelRespondsOutsideItsTitle() throws {
         let app = launch()
         openAddPortfolio(in: app)
@@ -225,6 +266,7 @@ final class WealthHubUITests: XCTestCase {
         scrollUntilHittable(sample, in: app)
         sample.tap()
         XCTAssertTrue(app.navigationBars["Extracted outcome"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Extracted outcome"].buttons["portfolio.add.close"].exists)
         XCTAssertTrue(app.staticTexts["I’ve found 8 holdings in this statement:"].exists)
         attachScreenshot(app, name: "Extracted outcome")
 
