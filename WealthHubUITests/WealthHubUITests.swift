@@ -397,6 +397,77 @@ final class WealthHubUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["giv.scenario.impact"].firstMatch.exists)
     }
 
+    func testHSBCReferenceUsesSelectedSingaporeAndHongKongAccounts() throws {
+        let app = launch()
+        app.buttons["wealth.viewDetails"].tap()
+        XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 5))
+        selectOnlyGIVAccount("10000000-0000-4000-8000-000000000002", market: "sg", in: app)
+        app.buttons["giv.tab.Performance"].tap()
+        assertHSBCReference("HSBC reference: (068) Equity Investment Account · Singapore", in: app)
+
+        selectOnlyGIVAccount("10000000-0000-4000-8000-000000000006", market: "hk", in: app)
+        assertHSBCReference("HSBC reference: HSBC One Investment Services · Hong Kong", in: app)
+        attachScreenshot(app, name: "Hong Kong account with default HSBC reference")
+    }
+
+    func testHSBCReferenceFollowsPerformanceMarket() throws {
+        let app = launch()
+        app.buttons["wealth.viewDetails"].tap()
+        XCTAssertTrue(app.buttons["giv.accounts"].waitForExistence(timeout: 5))
+        app.buttons["giv.accounts"].tap()
+        let global = app.buttons["accountSelector.global"]
+        XCTAssertTrue(global.waitForExistence(timeout: 3))
+        if global.value as? String != "Selected" { global.tap() }
+        app.buttons["Confirm"].tap()
+        app.buttons["giv.tab.Performance"].tap()
+
+        let hongKong = app.buttons["giv.performance.market.Hong Kong"]
+        XCTAssertTrue(hongKong.waitForExistence(timeout: 3))
+        hongKong.tap()
+        XCTAssertTrue(hongKong.isSelected)
+        assertHSBCReference("HSBC reference: HSBC One Investment Services · Hong Kong", in: app)
+
+        let singapore = app.buttons["giv.performance.market.Singapore"]
+        scrollUntilHittable(hongKong, in: app, upwards: false)
+        // The final market chip can be outside the horizontal viewport on iPhone.
+        let marketStrip = app.scrollViews.containing(.button, identifier: "giv.performance.market.Singapore").allElementsBoundByIndex.last
+        for _ in 0..<3 {
+            if singapore.isHittable { break }
+            marketStrip?.swipeLeft()
+        }
+        XCTAssertTrue(singapore.isHittable)
+        singapore.tap()
+        XCTAssertTrue(singapore.isSelected)
+        assertHSBCReference("HSBC reference: (068) Equity Investment Account · Singapore", in: app)
+    }
+
+    private func selectOnlyGIVAccount(_ id: String, market: String, in app: XCUIApplication) {
+        let selector = app.buttons["giv.accounts"]
+        scrollUntilHittable(selector, in: app, upwards: false)
+        selector.tap()
+        let global = app.buttons["accountSelector.global"]
+        XCTAssertTrue(global.waitForExistence(timeout: 3))
+        // Normalize any previous selection before selecting the one account.
+        if global.value as? String != "Selected" { global.tap() }
+        global.tap()
+        app.buttons["accountSelector.market.\(market)"].tap()
+        let account = app.buttons["accountSelector.account.\(id)"]
+        scrollUntilHittable(account, in: app)
+        account.tap()
+        XCTAssertEqual(account.value as? String, "Selected")
+        app.buttons["Confirm"].tap()
+        XCTAssertTrue(selector.waitForExistence(timeout: 3))
+    }
+
+    private func assertHSBCReference(_ expectedSource: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let source = app.staticTexts["giv.performance.referenceSource"]
+        XCTAssertTrue(source.waitForExistence(timeout: 3), file: file, line: line)
+        XCTAssertEqual(source.label, expectedSource, file: file, line: line)
+        let reference = app.buttons["giv.performance.benchmark.HSBC reference portfolio"]
+        scrollUntilHittable(reference, in: app, file: file, line: line)
+        XCTAssertTrue(reference.isSelected, "The HSBC reference must be enabled without tapping its legend.", file: file, line: line)
+    }
+
     private func openAddPortfolio(in app: XCUIApplication) {
         let generate = app.buttons["portfolio.analysis.generate"]
         scrollUntilHittable(generate, in: app)

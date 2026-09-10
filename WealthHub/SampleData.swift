@@ -98,7 +98,8 @@ struct SampleCatalog {
         "wealth_scenarios": "id,name,description,shockRate,referenceDecline",
         "wealth_scenario_targets": "id,scenarioID,category,currency",
         "wealth_regions": "id,name,color",
-        "performance": "id,asOfDate,initialStartDate,initialEndDate,initialMarket,initialPeriod,initialMetric,allMarketsLabel,marketFilters,sampleIntervals,seedModulus,maxYears,portfolioAmplitude,minDuration,primaryFrequency,primarySeedMultiplier,secondaryFrequency,secondarySeedMultiplier,secondaryWeight,portfolioBaseWeight,portfolioAnnualWeight",
+        "performance": "id,asOfDate,initialStartDate,initialEndDate,initialMarket,initialPeriod,initialMetric,allMarketsLabel,marketFilters,sampleIntervals,seedModulus,maxYears,minDuration,primaryFrequency,primarySeedMultiplier,secondaryFrequency,secondarySeedMultiplier,secondaryWeight,anchorBenchmarkID,referenceBenchmarkID,defaultReferenceMarket,sgReferencePortfolioID,hkReferencePortfolioID,holdingTiltWeight,maxHoldingTiltPercent",
+        "performance_banks": "id,institution,annualSpreadPercent,trackingAmplitude",
         "benchmarks": "id,name,annualReturnPercent,sqrtReturnPercent,amplitude,colorHex,symbol,defaultSelected",
         "analytics": "id,currencyIllustrationShock,concentrationThreshold,defaultScenarioID",
         "asset_profiles": "id,riskScore,liquidityScore,riskLabel,defaultSector",
@@ -206,7 +207,7 @@ struct SampleCatalog {
             }
             if purpose == "template", !(info["accountID"] ?? "").isEmpty { throw owner.error("Templates create fresh IDs; leave accountID blank.") }
             let id = purpose == "account" ? (info["accountID"]?.nilIfEmpty ?? stableID(["account", groupID])) : groupID
-            let values = ["id": id, "name": info["name"] ?? "", "institution": info["bank"] ?? "", "currency": info["currency"] ?? "", "colorIndex": info["colorIndex"]?.nilIfEmpty ?? "0", "note": info["note"] ?? "", "market": info["market"] ?? "", "accountNumber": info["accountNumber"] ?? "", "holdingsSet": holdingSource.isEmpty ? (hasHoldings ? groupID : "") : holdingSource, "portfolioValue": info["portfolioValue"] ?? ""]
+            let values = ["id": id, "portfolioID": groupID, "name": info["name"] ?? "", "institution": info["bank"] ?? "", "currency": info["currency"] ?? "", "colorIndex": info["colorIndex"]?.nilIfEmpty ?? "0", "note": info["note"] ?? "", "market": info["market"] ?? "", "accountNumber": info["accountNumber"] ?? "", "holdingsSet": holdingSource.isEmpty ? (hasHoldings ? groupID : "") : holdingSource, "portfolioValue": info["portfolioValue"] ?? ""]
             tables[purpose == "account" ? "accounts" : "account_templates"]!.append(SampleRecord(values: values, lineNumber: owner.lineNumber, source: source))
         }
         guard !tables["accounts"]!.isEmpty else { throw first.error("At least one group with purpose account is required.") }
@@ -403,9 +404,11 @@ struct SampleCatalog {
         for table in ["performance", "analytics"] { try require(rows(table).count == 1 && rows(table)[0].id == "default", rows(table)[0], "Exactly one row with id 'default' is required.") }
         let performance = row("performance", id: "default")
         for key in ["sampleIntervals", "seedModulus"] { try integer(performance, key, min: 1, max: 10000) }
-        for key in ["maxYears", "portfolioAmplitude", "minDuration", "primaryFrequency", "primarySeedMultiplier", "secondaryFrequency", "secondarySeedMultiplier", "secondaryWeight", "portfolioBaseWeight", "portfolioAnnualWeight"] { try number(performance, key, min: 0) }
+        for key in ["maxYears", "minDuration", "primaryFrequency", "primarySeedMultiplier", "secondaryFrequency", "secondarySeedMultiplier", "secondaryWeight", "holdingTiltWeight", "maxHoldingTiltPercent"] { try number(performance, key, min: 0) }
         try require(performance.double("maxYears") > 0 && performance.double("minDuration") > 0, performance, "maxYears and minDuration must be positive.")
         try number(performance, "maxYears", min: Double.leastNormalMagnitude, max: 100)
+        try number(performance, "holdingTiltWeight", min: 0, max: 1)
+        try number(performance, "maxHoldingTiltPercent", min: 0, max: 5)
         let dateFormatter = DateFormatter(); dateFormatter.locale = Locale(identifier: "en_US_POSIX"); dateFormatter.timeZone = TimeZone(secondsFromGMT: 0); dateFormatter.dateFormat = "yyyy-MM-dd"; dateFormatter.isLenient = false
         var dates: [String: Date] = [:]
         for key in ["asOfDate", "initialStartDate", "initialEndDate"] {
@@ -418,9 +421,35 @@ struct SampleCatalog {
         try require(filters.count == performance.list("marketFilters").count, performance, "marketFilters must not contain duplicate names.")
         try reference(performance, "initialMarket", filters); try reference(performance, "allMarketsLabel", filters)
         try require(filters.subtracting([performance.string("allMarketsLabel")]).isSubset(of: marketNames.union(regionNames)), performance, "marketFilters must use configured market or region names.")
+        try reference(performance, "anchorBenchmarkID", ids("benchmarks"))
+        try reference(performance, "referenceBenchmarkID", ids("benchmarks"))
+        try require(performance.string("anchorBenchmarkID") != performance.string("referenceBenchmarkID"), performance, "The anchor benchmark must be separate from the account reference.")
+        try reference(performance, "defaultReferenceMarket", ["Singapore", "Hong Kong"])
+        for (key, market) in [("sgReferencePortfolioID", "Singapore"), ("hkReferencePortfolioID", "Hong Kong")] {
+            try nonempty(performance, key)
+            let portfolioID = performance.string(key)
+            // Deleting a source account is allowed; the UI then marks its reference unavailable.
+            if let account = rows("accounts").first(where: { $0.string("portfolioID") == portfolioID }) {
+                try require(account.string("market") == market && account.string("institution") == "HSBC", performance, "\(key) must identify an HSBC account in \(market).")
+            } else {
+                try require(!rows("account_templates").contains { $0.string("portfolioID") == portfolioID } && !sets.contains(portfolioID), performance, "\(key) must identify an account, not a template or holdings-only group.")
+            }
+        }
+        var performanceInstitutions = Set<String>()
+        for row in rows("performance_banks") {
+            try nonempty(row, "institution")
+            try require(performanceInstitutions.insert(row.string("institution").lowercased()).inserted, row, "Each institution needs a single performance profile.")
+            try number(row, "annualSpreadPercent", min: -20, max: 20)
+            try number(row, "trackingAmplitude", min: 0, max: 5)
+        }
+        try require(performanceInstitutions.contains("*"), performance, "performance_banks.csv needs an institution '*' fallback profile.")
         for row in rows("benchmarks") {
             try nonempty(row, "name", "symbol"); try require(row.string("name") != "My total return", row, "My total return is reserved for the portfolio series.")
-            for key in ["annualReturnPercent", "sqrtReturnPercent", "amplitude"] { try number(row, key) }
+            for key in ["annualReturnPercent", "sqrtReturnPercent", "amplitude"] {
+                if row.id == performance.string("referenceBenchmarkID") {
+                    try require(row.string(key).isEmpty, row, "\(key) must be blank for the reference derived from an account.")
+                } else { try number(row, key) }
+            }
             try require(row.string("colorHex").count == 6 && UInt32(row.string("colorHex"), radix: 16) != nil, row, "colorHex must contain six hexadecimal digits.")
             try boolean(row, "defaultSelected")
         }

@@ -40,3 +40,131 @@ struct GIVPortfolioData {
 
     static let colors: [Color] = [Color(hex: 0x286477), Color(hex: 0x4BAA08), Color(hex: 0xBF375A), Color(hex: 0xEF7046), Color(hex: 0x53A1B6), Color(hex: 0xF5B72D), Color(hex: 0xEB6182), Color(hex: 0x168B82)]
 }
+
+struct GIVHistoryPoint: Identifiable {
+    var id: String { series + String(index) }
+    let series: String
+    let index: Int
+    let date: Date
+    let value: Double
+}
+
+/// A shared, deterministic demo history for selected accounts and the live reference account.
+/// Current market values and costs remain authoritative; this models an illustrative time path.
+struct GIVPerformanceModel {
+    static let mySeriesName = "My total return"
+    let data: GIVPortfolioData
+    let availableAccounts: [InvestmentAccount]
+    let market: String
+    let range: ClosedRange<Date>
+
+    private var settings: SampleRecord { SampleData.row("performance", id: "default") }
+    var referenceName: String { SampleData.row("benchmarks", id: settings.string("referenceBenchmarkID")).string("name") }
+    var entries: [GIVEntry] { filtered(data.entries) }
+    var invested: Double { entries.reduce(0) { $0 + $1.cost } }
+    var referenceMarket: String {
+        if market == "Singapore" || market == "Hong Kong" { return market }
+        let accountMarkets = Set(data.accounts.map(\.market))
+        if accountMarkets == ["Hong Kong"] { return "Hong Kong" }
+        if accountMarkets == ["Singapore"] { return "Singapore" }
+        return settings.string("defaultReferenceMarket")
+    }
+    var referenceAccount: InvestmentAccount? {
+        let key = referenceMarket == "Hong Kong" ? "hkReferencePortfolioID" : "sgReferencePortfolioID"
+        let portfolioID = settings.string(key)
+        guard let configured = SampleData.rows("accounts").first(where: { $0.string("portfolioID") == portfolioID }) else { return nil }
+        if let exact = availableAccounts.first(where: { $0.id == UUID(uuidString: configured.id) }) { return exact }
+        // Legacy migrations preserve their random account IDs and any edited display names.
+        return availableAccounts.first { account in
+            guard account.institution.caseInsensitiveCompare(configured.string("institution")) == .orderedSame,
+                  account.market == configured.string("market") else { return false }
+            if !configured.string("accountNumber").isEmpty, account.accountNumber == configured.string("accountNumber") { return true }
+            return account.name == configured.string("name")
+        }
+    }
+
+    private var duration: Double {
+        min(settings.double("maxYears"), max(1, range.upperBound.timeIntervalSince(range.lowerBound) / 86_400) / 365)
+    }
+    private var intervals: Int { settings.int("sampleIntervals") }
+    private func filtered(_ entries: [GIVEntry]) -> [GIVEntry] {
+        entries.filter { market == settings.string("allMarketsLabel") || $0.region == market }
+    }
+
+    func history(for series: String) -> [GIVHistoryPoint] {
+        let values: [Double]
+        if series == Self.mySeriesName {
+            values = portfolioValues(entries)
+        } else if series == referenceName {
+            guard let referenceAccount else { return [] }
+            let referenceData = GIVPortfolioData(accounts: [referenceAccount], currency: data.currency)
+            values = portfolioValues(filtered(referenceData.entries))
+        } else if let benchmark = SampleData.rows("benchmarks").first(where: { $0.string("name") == series }) {
+            values = benchmarkValues(benchmark)
+        } else { return [] }
+        return values.enumerated().map { index, value in
+            let fraction = Double(index) / Double(intervals)
+            return GIVHistoryPoint(series: series, index: index, date: range.lowerBound.addingTimeInterval(range.upperBound.timeIntervalSince(range.lowerBound) * fraction), value: value)
+        }
+    }
+
+    private func portfolioValues(_ entries: [GIVEntry]) -> [Double] {
+        guard !entries.isEmpty else { return [] }
+        let groups = Dictionary(grouping: entries, by: { $0.account.id.uuidString })
+        let accountEntries = groups.keys.sorted().map { groups[$0]! }
+        // Return the account path directly: a single selected reference account must coincide
+        // point-for-point, without an extra percentage multiplication/division round trip.
+        if accountEntries.count == 1 { return accountValues(accountEntries[0]) }
+        let costs = accountEntries.map { $0.reduce(0) { $0 + $1.cost } }
+        let totalCost = costs.reduce(0, +)
+        guard totalCost > 0 else { return Array(repeating: 0, count: intervals + 1) }
+        let paths = accountEntries.map(accountValues)
+        return (0...intervals).map { index in
+            zip(paths, costs).reduce(0) { $0 + $1.0[index] * ($1.1 / totalCost) }
+        }
+    }
+
+    private func accountValues(_ entries: [GIVEntry]) -> [Double] {
+        let sorted = entries.sorted { $0.holding.id.uuidString < $1.holding.id.uuidString }
+        let cost = sorted.reduce(0) { $0 + $1.cost }
+        guard cost > 0, let account = sorted.first?.account else { return Array(repeating: 0, count: intervals + 1) }
+        let profiles = SampleData.rows("performance_banks")
+        let profile = profiles.first { $0.string("institution").caseInsensitiveCompare(account.institution) == .orderedSame }
+            ?? profiles.first { $0.string("institution") == "*" }!
+        let returnRate = sorted.reduce(0) { $0 + $1.profit } / cost * 100
+        let limit = settings.double("maxHoldingTiltPercent")
+        let tilt = min(limit, max(-limit, returnRate * settings.double("holdingTiltWeight")))
+        let phase = sorted.reduce(0) { total, entry in
+            let identity = entry.holding.symbol + "|" + entry.holding.currency.rawValue + "|" + entry.holding.category.rawValue
+            return total + seed(identity) * (entry.cost / cost)
+        }
+        let anchor = benchmarkValues(SampleData.row("benchmarks", id: settings.string("anchorBenchmarkID")))
+        return (0...intervals).map { index in
+            let x = Double(index) / Double(intervals)
+            let primary = sin(x * settings.double("primaryFrequency") + phase * settings.double("primarySeedMultiplier"))
+            let secondary = sin(x * settings.double("secondaryFrequency") + phase * settings.double("secondarySeedMultiplier"))
+            let weight = settings.double("secondaryWeight")
+            let normalizedWave = (primary + secondary * weight) / (1 + abs(weight))
+            let residual = profile.double("trackingAmplitude") * duration * x * sin(.pi * x) * normalizedWave
+            return anchor[index] + (profile.double("annualSpreadPercent") + tilt) * duration * x + residual
+        }
+    }
+
+    private func seed(_ label: String) -> Double {
+        let modulus = settings.int("seedModulus")
+        let sum = label.unicodeScalars.reduce(0) { ($0 + Int($1.value)) % modulus }
+        return Double(sum) / Double(modulus)
+    }
+
+    private func benchmarkValues(_ benchmark: SampleRecord) -> [Double] {
+        let target = benchmark.double("annualReturnPercent") * duration + benchmark.double("sqrtReturnPercent") * sqrt(duration)
+        let phase = seed(benchmark.string("name"))
+        return (0...intervals).map { index in
+            let x = Double(index) / Double(intervals)
+            let primary = sin(x * settings.double("primaryFrequency") + phase * settings.double("primarySeedMultiplier"))
+            let secondary = sin(x * settings.double("secondaryFrequency") + phase * settings.double("secondarySeedMultiplier"))
+            let wave = (primary + secondary * settings.double("secondaryWeight")) * sin(x * .pi) * benchmark.double("amplitude") * sqrt(max(settings.double("minDuration"), duration))
+            return target * x + wave
+        }
+    }
+}

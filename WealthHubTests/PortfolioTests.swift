@@ -542,6 +542,256 @@ final class PortfolioTests: XCTestCase {
         XCTAssertEqual(PortfolioStore(defaults: defaults).accounts, SampleData.accounts)
     }
 
+    func testPerformanceConfigurationRejectsIndependentReferenceReturnsAndSharedAnchor() throws {
+        for key in ["annualReturnPercent", "sqrtReturnPercent", "amplitude"] {
+            try withSampleDirectory { directory in
+                let catalog = try SampleCatalog.load(directory: directory)
+                let referenceID = catalog.row("performance", id: "default").string("referenceBenchmarkID")
+                try rewriteTable("benchmarks", in: directory) { rows in
+                    let index = try XCTUnwrap(rows.firstIndex { $0["id"] == referenceID })
+                    rows[index][key] = "0.5"
+                }
+                XCTAssertThrowsError(try SampleCatalog.load(directory: directory)) { error in
+                    XCTAssertTrue(error.localizedDescription.contains("benchmarks.csv"), error.localizedDescription)
+                    XCTAssertTrue(error.localizedDescription.contains(key), error.localizedDescription)
+                }
+            }
+        }
+        try withSampleDirectory { directory in
+            try rewriteTable("performance", in: directory) { rows in
+                rows[0]["anchorBenchmarkID"] = rows[0]["referenceBenchmarkID"]
+            }
+            XCTAssertThrowsError(try SampleCatalog.load(directory: directory)) { error in
+                XCTAssertTrue(error.localizedDescription.contains("performance.csv"), error.localizedDescription)
+                XCTAssertTrue(error.localizedDescription.contains("anchor benchmark"), error.localizedDescription)
+            }
+        }
+    }
+
+    func testBankPerformanceConfigurationRequiresFallbackAndUniqueInstitutions() throws {
+        try withSampleDirectory { directory in
+            try rewriteTable("performance_banks", in: directory) { rows in
+                rows.removeAll { $0["institution"] == "*" }
+            }
+            XCTAssertThrowsError(try SampleCatalog.load(directory: directory)) { error in
+                XCTAssertTrue(error.localizedDescription.contains("performance_banks.csv"), error.localizedDescription)
+                XCTAssertTrue(error.localizedDescription.contains("fallback"), error.localizedDescription)
+            }
+        }
+        for institution in ["HSBC", "hsbc"] {
+            try withSampleDirectory { directory in
+                try rewriteTable("performance_banks", in: directory) { rows in
+                    var duplicate = try XCTUnwrap(rows.first { $0["institution"] == "HSBC" })
+                    duplicate["id"] = "second-hsbc-profile"
+                    duplicate["institution"] = institution
+                    duplicate["annualSpreadPercent"] = "1.5"
+                    rows.append(duplicate)
+                }
+                XCTAssertThrowsError(try SampleCatalog.load(directory: directory)) { error in
+                    XCTAssertTrue(error.localizedDescription.contains("performance_banks.csv"), error.localizedDescription)
+                    XCTAssertTrue(error.localizedDescription.contains("single performance profile"), error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    func testPerformanceDefaultsSelectMarketAndAccountBenchmarks() throws {
+        let selected = Set(SampleData.rows("benchmarks").filter { $0.bool("defaultSelected") }.map(\.id))
+        XCTAssertTrue(selected.contains("sp500"))
+        XCTAssertTrue(selected.contains("hsbc-reference"))
+        let equity = try performanceAccount("hsbc-sg-equity")
+        let model = performanceModel(accounts: [equity])
+        XCTAssertEqual(model.referenceAccount?.id, equity.id)
+        XCTAssertEqual(model.referenceMarket, "Singapore")
+    }
+
+    func testSingleReferenceAccountOverlapsExactlyForEveryPeriodAndRegion() throws {
+        let ranges = [
+            performanceDate("2026-08-09")...performanceDate("2026-09-09"),
+            performanceDate("2025-09-09")...performanceDate("2026-09-09"),
+            performanceDate("2024-04-17")...performanceDate("2026-07-23")
+        ]
+        for portfolioID in ["hsbc-sg-equity", "hsbc-hk-investment"] {
+            let account = try performanceAccount(portfolioID)
+            let region = try XCTUnwrap(account.holdings.first?.region)
+            for market in ["All markets", account.market, region] {
+                for range in ranges {
+                    let model = performanceModel(accounts: [account], market: market, range: range)
+                    let own = model.history(for: GIVPerformanceModel.mySeriesName)
+                    let reference = model.history(for: "HSBC reference portfolio")
+                    XCTAssertFalse(own.isEmpty, "\(portfolioID), \(market)")
+                    XCTAssertEqual(model.referenceAccount?.id, account.id)
+                    XCTAssertEqual(own.map(\.date), reference.map(\.date))
+                    XCTAssertEqual(own.map(\.index), reference.map(\.index))
+                    XCTAssertEqual(own.map(\.value), reference.map(\.value),
+                                   "The same account and region must use exactly the same series, without rounding drift.")
+                    if market != "All markets" {
+                        XCTAssertFalse(model.entries.isEmpty)
+                        XCTAssertTrue(model.entries.allSatisfy { $0.region == market })
+                    }
+                }
+            }
+        }
+    }
+
+    func testReferenceMarketFollowsExplicitFilterThenSelectedAccountMarkets() throws {
+        let singapore = try performanceAccount("hsbc-sg-equity")
+        let hongKong = try performanceAccount("hsbc-hk-investment")
+        let standardChartered = try performanceAccount("standard-chartered-hk")
+        let cases: [(accounts: [InvestmentAccount], market: String, reference: InvestmentAccount)] = [
+            ([singapore], "Hong Kong", hongKong),
+            ([hongKong], "Singapore", singapore),
+            ([hongKong], "All markets", hongKong),
+            ([standardChartered], "All markets", hongKong),
+            ([hongKong, standardChartered], "Mainland China", hongKong),
+            ([singapore, hongKong], "All markets", singapore)
+        ]
+        for scenario in cases {
+            let model = performanceModel(accounts: scenario.accounts, market: scenario.market)
+            XCTAssertEqual(model.referenceMarket, scenario.reference.market)
+            XCTAssertEqual(model.referenceAccount?.id, scenario.reference.id)
+        }
+    }
+
+    func testReferenceUsesCurrentEditedHoldingsAndMigratedAccountIdentity() throws {
+        let original = try performanceAccount("hsbc-sg-equity")
+        let originalHistory = performanceModel(accounts: [original]).history(for: "HSBC reference portfolio")
+        var edited = original
+        edited.id = UUID()
+        edited.name = "My renamed investment portfolio"
+        edited.holdings.removeLast()
+        for index in edited.holdings.indices {
+            edited.holdings[index].price = edited.holdings[index].averageCost
+        }
+        edited.holdings[0].quantity *= 1.5
+        let available = SampleData.accounts.map { $0.id == original.id ? edited : $0 }
+        let model = performanceModel(accounts: [edited], availableAccounts: available)
+        XCTAssertEqual(model.referenceAccount, edited,
+                       "A saved legacy UUID and edited name must resolve through the account number without restoring seed holdings.")
+        let reference = model.history(for: "HSBC reference portfolio")
+        XCTAssertEqual(reference.map(\.value), model.history(for: GIVPerformanceModel.mySeriesName).map(\.value))
+        XCTAssertNotEqual(reference.map(\.value), originalHistory.map(\.value),
+                          "Editing the source holdings must affect the account-backed reference.")
+
+        let exactIDFirst = performanceModel(accounts: [edited], availableAccounts: [edited, original])
+        XCTAssertEqual(exactIDFirst.referenceAccount?.id, original.id,
+                       "An exact configured ID has priority over a migrated metadata match.")
+    }
+
+    func testDeletedReferenceDoesNotReappearAsFabricatedSamplePerformance() throws {
+        for portfolioID in ["hsbc-sg-equity", "hsbc-hk-investment"] {
+            let removed = try performanceAccount(portfolioID)
+            let available = SampleData.accounts.filter { $0.id != removed.id }
+            let selected = available.filter { $0.market == removed.market }
+            let model = performanceModel(accounts: selected, availableAccounts: available, market: removed.market)
+            XCTAssertNil(model.referenceAccount)
+            XCTAssertTrue(model.history(for: "HSBC reference portfolio").isEmpty)
+            XCTAssertFalse(model.history(for: "S&P 500").isEmpty,
+                           "Deleting an account must not remove independent market benchmarks.")
+        }
+    }
+
+    func testCombinedPerformanceIsCostWeightedAcrossIndependentAccountSeries() throws {
+        let accounts = try ["hsbc-sg-equity", "dbs-sg", "standard-chartered-hk"].map(performanceAccount)
+        for currency in [Currency.SGD, .HKD] {
+            for market in ["All markets", "Singapore", "Hong Kong"] {
+                let combined = performanceModel(accounts: accounts, currency: currency, market: market)
+                let components = accounts.map { performanceModel(accounts: [$0], currency: currency, market: market) }
+                let invested = components.reduce(0) { $0 + $1.invested }
+                XCTAssertGreaterThan(invested, 0)
+                XCTAssertEqual(combined.invested, invested, accuracy: 0.000001)
+                let componentSeries = components.map { $0.history(for: GIVPerformanceModel.mySeriesName) }
+                let combinedSeries = combined.history(for: GIVPerformanceModel.mySeriesName)
+                XCTAssertFalse(combinedSeries.isEmpty)
+                for (index, point) in combinedSeries.enumerated() {
+                    let weighted = components.indices.reduce(0.0) { total, componentIndex in
+                        guard components[componentIndex].invested > 0 else { return total }
+                        return total + componentSeries[componentIndex][index].value * components[componentIndex].invested / invested
+                    }
+                    XCTAssertEqual(point.value, weighted, accuracy: 0.000000001,
+                                   "Adding an account should blend its existing curve, rather than regenerate another account's history.")
+                }
+            }
+        }
+    }
+
+    func testHSBCAccountsTrackSP500AndStayModestlyAheadOfOtherBanks() throws {
+        let hsbcAccounts = SampleData.accounts.filter { $0.institution == "HSBC" }
+        let otherAccounts = SampleData.accounts.filter { ["DBS", "Standard Chartered"].contains($0.institution) }
+        XCTAssertEqual(hsbcAccounts.count, 6)
+        XCTAssertEqual(otherAccounts.count, 2)
+        for range in [
+            performanceDate("2026-08-09")...performanceDate("2026-09-09"),
+            performanceDate("2025-09-09")...performanceDate("2026-09-09")
+        ] {
+            let benchmark = performanceModel(accounts: [], range: range).history(for: "S&P 500")
+            XCTAssertGreaterThan(benchmark.count, 2)
+            XCTAssertTrue(zip(benchmark, benchmark.dropFirst()).contains { pair in pair.0.value > pair.1.value },
+                          "The mock benchmark should contain natural pullbacks.")
+            let otherSeries = otherAccounts.map {
+                performanceModel(accounts: [$0], range: range).history(for: GIVPerformanceModel.mySeriesName)
+            }
+            for account in hsbcAccounts {
+                let series = performanceModel(accounts: [account], range: range).history(for: GIVPerformanceModel.mySeriesName)
+                XCTAssertEqual(series.count, benchmark.count)
+                XCTAssertEqual(series.first?.value, 0)
+                for index in series.indices.dropFirst() {
+                    XCTAssertLessThan(abs(series[index].value - benchmark[index].value), 1.0,
+                                      "HSBC should stay close to S&P 500, without an exaggerated synthetic lead.")
+                    for other in otherSeries {
+                        XCTAssertGreaterThan(series[index].value, other[index].value)
+                        XCTAssertLessThan(series[index].value - other[index].value, 1.5,
+                                          "The difference between banks should remain modest over a year.")
+                    }
+                }
+            }
+        }
+    }
+
+    func testExternalBenchmarksAreStableAcrossAccountsMarketsAndReportingCurrencies() throws {
+        let singapore = try performanceAccount("hsbc-sg-equity")
+        let hongKong = try performanceAccount("hsbc-hk-investment")
+        let baseline = performanceModel(accounts: [singapore])
+        for name in ["S&P 500", "HSI"] {
+            let expected = baseline.history(for: name)
+            XCTAssertFalse(expected.isEmpty)
+            for accounts in [[hongKong], [singapore, hongKong], []] {
+                for market in ["All markets", "Singapore", "Hong Kong"] {
+                    for currency in Currency.allCases {
+                        let model = performanceModel(accounts: accounts, currency: currency, market: market)
+                        _ = model.history(for: "HSBC reference portfolio")
+                        _ = model.history(for: GIVPerformanceModel.mySeriesName)
+                        let actual = model.history(for: name)
+                        XCTAssertEqual(actual.map(\.date), expected.map(\.date))
+                        XCTAssertEqual(actual.map(\.value), expected.map(\.value),
+                                       "Selection, reference visibility and display currency must not alter a market index.")
+                    }
+                }
+            }
+        }
+    }
+
+    private func performanceAccount(_ portfolioID: String) throws -> InvestmentAccount {
+        let row = try XCTUnwrap(SampleData.rows("accounts").first { $0.string("portfolioID") == portfolioID })
+        return try XCTUnwrap(SampleData.accounts.first { $0.id.uuidString == row.id })
+    }
+
+    private func performanceDate(_ value: String) -> Date {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: value)!
+    }
+
+    private func performanceModel(accounts: [InvestmentAccount], availableAccounts: [InvestmentAccount]? = nil,
+                                  currency: Currency = .SGD, market: String = "All markets",
+                                  range: ClosedRange<Date>? = nil) -> GIVPerformanceModel {
+        GIVPerformanceModel(data: GIVPortfolioData(accounts: accounts, currency: currency),
+                            availableAccounts: availableAccounts ?? SampleData.accounts, market: market,
+                            range: range ?? (performanceDate("2026-08-09")...performanceDate("2026-09-09")))
+    }
+
     private func withSampleDirectory(_ body: (URL) throws -> Void) throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("wealthhub-sample-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.copyItem(at: SampleData.directory, to: directory)

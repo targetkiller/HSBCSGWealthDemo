@@ -23,10 +23,14 @@ struct GIVPerformanceView: View {
         let first = Calendar.current.date(byAdding: period == "year" ? .year : .month, value: -1, to: Self.anchor) ?? Self.anchor
         return first...Self.anchor
     }
-    private var entries: [GIVEntry] { data.entries.filter { market == PerformanceSample.settings.string("allMarketsLabel") || $0.region == market } }
-    private var invested: Double { entries.reduce(0) { $0 + $1.cost } }
+    private var performance: GIVPerformanceModel { GIVPerformanceModel(data: data, availableAccounts: store.accounts, market: market, range: range) }
+    private var entries: [GIVEntry] { performance.entries }
+    private var invested: Double { performance.invested }
+    private var referenceName: String { performance.referenceName }
+    private var availableBenchmarkNames: [String] { benchmarkNames.filter { $0 != referenceName || !history(for: $0).isEmpty } }
+    private var activeBenchmarkNames: [String] { availableBenchmarkNames.filter { benchmarks.contains($0) } }
     private var mySeries: [GIVHistoryPoint] { history(for: "My total return") }
-    private var allPoints: [GIVHistoryPoint] { mySeries + benchmarkNames.filter { benchmarks.contains($0) }.flatMap { history(for: $0) } }
+    private var allPoints: [GIVHistoryPoint] { mySeries + activeBenchmarkNames.flatMap { history(for: $0) } }
     private var finalReturn: Double { mySeries.last?.value ?? 0 }
     private var activePoint: GIVHistoryPoint? {
         guard let selectedDate else { return mySeries.last }
@@ -87,6 +91,8 @@ struct GIVPerformanceView: View {
                 performanceChart
                 legend
             }
+            Text(referenceSource).font(.system(size: 10)).foregroundStyle(Theme.muted)
+                .accessibilityIdentifier("giv.performance.referenceSource")
             Text("Illustrative performance · Demo history and benchmark series. No external cash flows are modelled, so TWRR and MWRR are equal.")
                 .font(.system(size: 10)).foregroundStyle(Theme.muted).lineSpacing(3)
         }
@@ -122,9 +128,9 @@ struct GIVPerformanceView: View {
                 let value = activePoint?.value ?? 0
                 Text("\(store.amount(invested * value / 100)) (\(String(format: "%+.2f%%", value)))").font(.system(size: 11, weight: .semibold)).foregroundStyle(value >= 0 ? Theme.green : Theme.red).lineLimit(1).minimumScaleFactor(0.7)
             }
-            ForEach(benchmarkNames.filter { benchmarks.contains($0) }, id: \.self) { name in
+            ForEach(activeBenchmarkNames, id: \.self) { name in
                 HStack(spacing: 6) {
-                    Image(systemName: "square.fill").font(.system(size: 9)).foregroundStyle(color(for: name))
+                    Image(systemName: PerformanceSample.benchmark(named: name)?.string("symbol") ?? "circle.fill").font(.system(size: 9)).foregroundStyle(color(for: name))
                     Text(name).font(.system(size: 11))
                     let values = history(for: name)
                     let point = values.min { abs($0.date.timeIntervalSince(activePoint?.date ?? range.upperBound)) < abs($1.date.timeIntervalSince(activePoint?.date ?? range.upperBound)) }
@@ -139,7 +145,9 @@ struct GIVPerformanceView: View {
         Chart {
             ForEach(allPoints) { point in
                 LineMark(x: .value("Date", point.date), y: .value("Return %", point.value), series: .value("Series", point.series))
-                    .foregroundStyle(color(for: point.series)).lineStyle(StrokeStyle(lineWidth: 1.4)).interpolationMethod(.linear)
+                    .foregroundStyle(color(for: point.series))
+                    .lineStyle(StrokeStyle(lineWidth: 1.4, dash: point.series == referenceName ? [5, 3] : []))
+                    .interpolationMethod(.linear)
             }
             RuleMark(y: .value("Zero", 0)).foregroundStyle(Theme.muted.opacity(0.7)).lineStyle(StrokeStyle(lineWidth: 0.7))
             if let point = activePoint {
@@ -172,12 +180,13 @@ struct GIVPerformanceView: View {
                     if benchmarks.contains(name) { benchmarks.remove(name) } else { benchmarks.insert(name) }
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: benchmarks.contains(name) ? "largecircle.fill.circle" : "circle").font(.system(size: 19, weight: .light))
+                        Image(systemName: activeBenchmarkNames.contains(name) ? "largecircle.fill.circle" : "circle").font(.system(size: 19, weight: .light))
                         Image(systemName: PerformanceSample.benchmark(named: name)?.string("symbol") ?? "circle.fill").font(.system(size: 8)).foregroundStyle(color(for: name))
                         Text(name).font(.system(size: 10)).lineLimit(2)
                     }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("giv.performance.benchmark.\(name)")
-                    .accessibilityAddTraits(benchmarks.contains(name) ? .isSelected : [])
+                    .disabled(!availableBenchmarkNames.contains(name))
+                    .accessibilityAddTraits(activeBenchmarkNames.contains(name) ? .isSelected : [])
             }
         }
     }
@@ -203,36 +212,15 @@ struct GIVPerformanceView: View {
     }
     private func dateText(_ date: Date) -> String { date.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)) }
 
-    // A deterministic scenario series, deliberately separate from the current-value calculation.
-    private func history(for series: String) -> [GIVHistoryPoint] {
-        let settings = PerformanceSample.settings
-        let days = max(1, range.upperBound.timeIntervalSince(range.lowerBound) / 86_400)
-        let duration = min(settings.double("maxYears"), days / 365)
-        let baseRate = invested > 0 ? entries.reduce(0) { $0 + $1.profit } / invested * 100 : 0
-        // Benchmark paths must remain identical when the account or market selection changes.
-        let seedSource = series == "My total return"
-            ? entries.reduce(0) { $0 + $1.holding.symbol.unicodeScalars.reduce(0) { $0 + Int($1.value) } }
-            : series.unicodeScalars.reduce(0) { $0 + Int($1.value) }
-        let seedModulus = settings.int("seedModulus")
-        let seed = Double(seedSource % seedModulus) / Double(seedModulus)
-        let target: Double
-        let amplitude: Double
-        if let benchmark = PerformanceSample.benchmark(named: series) {
-            target = benchmark.double("annualReturnPercent") * duration + benchmark.double("sqrtReturnPercent") * sqrt(duration)
-            amplitude = benchmark.double("amplitude")
-        } else {
-            target = baseRate * min(1, settings.double("portfolioBaseWeight") + duration * settings.double("portfolioAnnualWeight"))
-            amplitude = settings.double("portfolioAmplitude")
+    private var referenceSource: String {
+        guard let account = performance.referenceAccount else {
+            return "HSBC reference unavailable · Add the configured \(performance.referenceMarket) account to compare."
         }
-        let intervals = settings.int("sampleIntervals")
-        return (0...intervals).map { index in
-            let x = Double(index) / Double(intervals)
-            let primary = sin(x * settings.double("primaryFrequency") + seed * settings.double("primarySeedMultiplier"))
-            let secondary = sin(x * settings.double("secondaryFrequency") + seed * settings.double("secondarySeedMultiplier"))
-            let wave = (primary + secondary * settings.double("secondaryWeight")) * sin(x * .pi) * amplitude * sqrt(max(settings.double("minDuration"), duration))
-            return GIVHistoryPoint(series: series, index: index, date: range.lowerBound.addingTimeInterval(range.upperBound.timeIntervalSince(range.lowerBound) * x), value: target * x + wave)
-        }
+        let source = "HSBC reference: \(account.name) · \(performance.referenceMarket)"
+        return history(for: referenceName).isEmpty ? source + " · No holdings in this market" : source
     }
+
+    private func history(for series: String) -> [GIVHistoryPoint] { performance.history(for: series) }
 }
 
 private enum PerformanceSample {
@@ -252,12 +240,4 @@ private enum PerformanceSample {
         }
         return date
     }
-}
-
-private struct GIVHistoryPoint: Identifiable {
-    var id: String { series + String(index) }
-    let series: String
-    let index: Int
-    let date: Date
-    let value: Double
 }

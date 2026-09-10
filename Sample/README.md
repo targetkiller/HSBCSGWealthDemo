@@ -4,6 +4,8 @@
 
 **BA 同事日常只需编辑 [Portfolios.csv](Portfolios.csv)**：账户名称、银行、持仓和组合价值都在同一张表。汇率、风险参数、场景、产品文案等放在 `Others/`，按需调整。
 
+Performance 中默认勾选的 HSBC reference portfolio 直接读取对应 SG/HK 账户及持仓，无需另填一份 reference 数据。账户映射和演示收益参数见 [Others 配置说明](Others/README.md#performance-and-reference-portfolios)。
+
 ```text
 Sample/
 ├── Portfolios.csv       ← 账户、持仓、组合价值；日常编辑这张表

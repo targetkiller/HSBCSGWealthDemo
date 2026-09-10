@@ -1,4 +1,4 @@
 id,name,annualReturnPercent,sqrtReturnPercent,amplitude,colorHex,symbol,defaultSelected
 sp500,S&P 500,8.7,0.9,0.8,C7355C,square.fill,true
-hsbc-reference,HSBC reference portfolio,5.3,0.5,0.8,4BAA08,triangle.fill,false
+hsbc-reference,HSBC reference portfolio,,,,4BAA08,triangle.fill,true
 hsi,HSI,6.1,-0.7,0.8,EF7046,diamond.fill,false
