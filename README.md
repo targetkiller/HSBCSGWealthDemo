@@ -54,7 +54,7 @@ Suggested walkthrough: Wealth → Generate AI analysis → Add other holdings to
 
 ## Demo data and calculation assumptions
 
-Default accounts, portfolio templates, holdings, and illustrative analytics are configurable in the **[Sample data tables](Sample/README.md)**. The guide explains all 20 CSV files, their relationships, and how to rebuild and restore the edited defaults without replacing saved data automatically.
+BA colleagues can edit accounts, holdings, and portfolio values in one file: **[Sample/Portfolios.csv](Sample/Portfolios.csv)**. Enter an optional `holdingValue` or `portfolioValue` to set a target market value, or leave these blank to calculate values from quantities and prices. See the **[editing guide](Sample/README.md#english-quick-guide)** for examples. Exchange rates, analytics parameters, scenarios, and other settings live separately in **[Sample/Others/](Sample/Others/README.md)**. Saved local accounts remain unchanged until you explicitly restore demo data.
 
 - Includes **8 prelinked demo accounts and 40 holdings**. Singapore: HSBC Current Account, (068) Equity Investment Account, (085) Unit Trust Investment Account, and DBS Account. Hong Kong: HSBC Current Account, HSBC One Investment Services, HSBC One FundMax Account, and Standard Chartered Account. The account selector displays account numbers and bank marks and supports global, regional, and cross-region selection.
 - A one-time migration upgrades the previous three default accounts, adding demo accounts and classifications while preserving IDs, user edits, and user-created accounts. Subsequent deletions are not automatically restored, and an intentionally empty portfolio stays empty.
@@ -68,7 +68,7 @@ Default accounts, portfolio templates, holdings, and illustrative analytics are 
 - Try a sample statement includes the design's eight Hong Kong stock holdings with illustrative prices and costs. The older CSV import screen in the menu retains its 1 MB limit; use the Wealth entry point for the main demo.
 - Data is stored in the app's sandbox using UserDefaults. A production implementation would need secure storage, account authentication, authorisation services, real data adapters, and appropriate compliance review.
 
-Run `./scripts/sample-data.sh validate` to check the configuration with the app's loader. Run `./scripts/sample-data.sh export-statement` to generate `build/Sample/statement.csv` for a manual import test; an optional final argument selects a different output path. Its source is the four-position `csv-file-export` set in [`Sample/holdings.csv`](Sample/holdings.csv); the app's separate two-position CSV sample uses `csv-import`. Both remain in that single editable holdings table. Supported `category` values: `Stocks`, `Unit trusts`, `Bonds`, `Cash and FX`, `Structured products`, `Insurance`, and `Options`.
+Run `./scripts/sample-data.sh validate` to check the configuration, then `./scripts/sample-data.sh summary` to review account values and holding counts before rebuilding. `./scripts/sample-data.sh export-statement` generates `build/Sample/statement.csv` for a manual import test; an optional final argument selects another output path. Its source is the `csv-file-export` group in [`Sample/Portfolios.csv`](Sample/Portfolios.csv), while the in-app two-position CSV sample uses `csv-import`. Supported `category` values: `Stocks`, `Unit trusts`, `Bonds`, `Cash and FX`, `Structured products`, `Insurance`, and `Options`.
 
 ## Tests
 
@@ -95,7 +95,8 @@ TestFlight preparation also passed an unsigned Release device-archive check for 
 
 Swift source files are in `WealthHub/`:
 
-- `Models.swift`: Accounts, holdings, asset classes, currencies, and demo data.
+- `Models.swift`: Accounts, holdings, asset classes, and currencies.
+- `SampleData.swift`: CSV configuration loading, validation, and demo account construction from `Sample/Portfolios.csv` and `Sample/Others/`.
 - `PortfolioStore.swift`: Aggregation, observable state, and local persistence.
 - `StatementParser.swift`: Independently testable CSV parsing.
 - `WealthView.swift`: Wealth overview, analysis cards, holdings, and stress scenarios.

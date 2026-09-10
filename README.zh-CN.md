@@ -54,7 +54,7 @@ bash scripts/run-demo.sh
 
 ## 数据口径与范围
 
-默认账户、组合模板、持仓和演示分析已集中为 **[Sample 可配置数据表](Sample/README.md#中文使用说明)**。说明包含全部 20 张 CSV 的用途、字段关联、编辑方式，以及重新构建后通过 Restore demo data 加载新配置的步骤；已有本地数据不会被自动覆盖。
+BA 同事日常只需修改 **[Sample/Portfolios.csv](Sample/Portfolios.csv)**，账户、持仓与组合价值集中在这一张表。可直接填写 `holdingValue` 或 `portfolioValue` 设置目标市值，留空则按数量与价格计算；操作示例见 **[账户与组合编辑指南](Sample/README.md)**。汇率、分析参数、场景等其余配置放在 **[Sample/Others/](Sample/Others/README.md)**。已有本地账户会保留，直到手动恢复演示数据。
 
 - 默认预关联 8 个演示账户、40 项持仓。新加坡：HSBC Current Account、(068) Equity Investment Account、(085) Unit Trust Investment Account、DBS Account；香港：HSBC Current Account、HSBC One Investment Services、HSBC One FundMax Account、Standard Chartered Account。账户选择面板展示账号及银行标识，支持全局、地区和跨地区多选。
 - 老版本的 3 个默认账户会执行一次迁移：补齐新演示账户和分类信息，同时保留原 ID、用户修改和新增账户。迁移完成后的删除不会被自动恢复；已清空的组合继续保持为空。
@@ -68,7 +68,7 @@ bash scripts/run-demo.sh
 - 为便于演示，Try a sample statement 提供设计稿中的 8 条港股持仓，价格与成本为示例。既有菜单内的旧 CSV 导入页面仍限制 1 MB，建议演示使用 Wealth 新入口。
 - 数据存于应用沙盒 UserDefaults，仅用于 Demo。生产版本需补充安全存储、账户认证、授权服务、真实数据适配和合规评估。
 
-执行 `./scripts/sample-data.sh validate`，使用 App 的加载器校验配置；执行 `./scripts/sample-data.sh export-statement`，生成 `build/Sample/statement.csv` 供手动导入测试，也可在命令末尾指定其他输出路径。导出使用 [`Sample/holdings.csv`](Sample/holdings.csv) 中 `setID=csv-file-export` 的 4 条持仓，App 内独立的 2 条 CSV 样例则使用 `csv-import`。两者都在这一张持仓表中维护，无需另存一份可编辑账单数据。支持的 category：`Stocks`、`Unit trusts`、`Bonds`、`Cash and FX`、`Structured products`、`Insurance`、`Options`。
+执行 `./scripts/sample-data.sh validate` 校验配置，再执行 `./scripts/sample-data.sh summary` 核对各账户市值和持仓数量，确认后重新构建。`./scripts/sample-data.sh export-statement` 可生成 `build/Sample/statement.csv` 供手动导入测试，也可在命令末尾指定其他输出路径。导出使用 [`Sample/Portfolios.csv`](Sample/Portfolios.csv) 中 `portfolioID=csv-file-export` 的 4 条持仓；App 内的 2 条 CSV 样例使用 `csv-import`。支持的 category：`Stocks`、`Unit trusts`、`Bonds`、`Cash and FX`、`Structured products`、`Insurance`、`Options`。
 
 ## 测试
 
@@ -93,7 +93,8 @@ TestFlight 准备已通过 Xcode 26.2 / iOS SDK 26.2 的 **1.0.1 (2)** 未签名
 
 ## 结构
 
-- `Models.swift`：账户、持仓、资产类别、币种、示例数据。
+- `Models.swift`：账户、持仓、资产类别与币种。
+- `SampleData.swift`：加载与校验 `Sample/Portfolios.csv` 和 `Sample/Others/`，生成演示账户。
 - `PortfolioStore.swift`：聚合计算、Observation 状态、本地持久化。
 - `StatementParser.swift`：可独立测试的 CSV 解析。
 - `WealthView.swift`：按 Figma 重做的 Wealth 主页面、分析卡片、持仓和压力情景。

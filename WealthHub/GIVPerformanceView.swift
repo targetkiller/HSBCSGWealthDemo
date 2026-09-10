@@ -248,7 +248,7 @@ private enum PerformanceSample {
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.isLenient = false
         guard let date = formatter.date(from: settings.string(field)) else {
-            preconditionFailure("Sample/performance.csv contains an invalid \(field) date")
+            preconditionFailure("Sample/Others/performance.csv contains an invalid \(field) date")
         }
         return date
     }

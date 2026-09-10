@@ -1,98 +1,100 @@
-# Sample data configuration
+# 账户与组合配置 · Portfolio configuration
 
-[English](#editing-the-demo) | [简体中文](#中文使用说明) | [Project README](../README.md)
+[English quick guide](#english-quick-guide) · [项目说明](../README.md) · [其他参数](Others/README.md)
 
-The app's default accounts, portfolio templates, holdings, exchange rates, illustrative analytics, products, and assistant responses are configured in the 20 CSV tables in this folder. Edit these tables to change the demo's content. Account valuation, aggregation, filtering, and user document validation remain in Swift.
+**BA 同事日常只需编辑 [Portfolios.csv](Portfolios.csv)**：账户名称、银行、持仓和组合价值都在同一张表。汇率、风险参数、场景、产品文案等放在 `Others/`，按需调整。
 
-## Editing the demo
+```text
+Sample/
+├── Portfolios.csv       ← 账户、持仓、组合价值；日常编辑这张表
+├── README.md            ← 本说明
+└── Others/              ← 汇率、分析参数、场景等其他配置
+```
 
-1. Change the relevant CSV, keeping its header and referenced IDs intact. For an existing holding, edit `quantity`, `price`, and `averageCost` in [holdings.csv](holdings.csv).
-2. Export as UTF-8 CSV and run `./scripts/sample-data.sh validate` from the project root. It uses the same loader as the app to validate columns, values, and references. The supplied dataset contains 8 default accounts and 57 configured holding rows across 20 tables: 40 default holdings, 3 bank-connection positions, 8 statement-preview positions, 2 in-app CSV sample positions, and 4 statement-file export positions.
-3. Rebuild the app in Xcode. These files are bundled build resources; editing a file on your Mac does not update an already installed build or a TestFlight build.
-4. On a new installation, the app loads the configured defaults. On an installation with saved accounts, go to **Menu → Settings → Restore demo data** and confirm to replace local accounts and holdings with the newly bundled defaults. Restore discards local account and holding edits; rebuilding alone preserves them.
+## 表格怎么读
 
-Configuration errors appear on the startup error screen with details to correct. Fix the CSV and rebuild; the app does not silently load a different hardcoded dataset. An intentionally empty saved portfolio remains empty until you explicitly restore or add accounts.
+每一行是一项持仓，相同 `portfolioID` 的行属于同一个账户或组合。每组第一行填写账户信息，后续行的账户字段可以留空；每行都要保留 `portfolioID`。即使排序后行不相邻，也会归到同一组合；同一组若重复填写账户信息，内容必须一致。
 
-To validate the tables and export a statement for a manual import test:
+先筛选 `purpose=account` 找到默认账户所在的组合，再按其 `portfolioID` 查看全部持仓。后续持仓行的 `purpose` 留空是正常的，不代表它们被停用。
+
+| 要改什么 | 编辑的列 | 示例 / 单位 |
+| --- | --- | --- |
+| 账户名称、银行、市场 | `name`、`bank`、`market` | 在该组合的账户信息行填写 |
+| 账户展示币种 | `currency` | `SGD`、`USD`、`HKD` 或 `CNY` |
+| 整个组合的目标市值 | `portfolioValue` | `500000`，单位为账户的 `currency` |
+| 持仓名称、代码、类别 | `holdingName`、`symbol`、`category` | 证券代码按文本保存，保留前导零 |
+| 持仓数量、价格、成本 | `quantity`、`price`、`averageCost` | 单价和平均成本使用 `holdingCurrency` |
+| 单项持仓的目标市值 | `holdingValue` | `10000`，单位为该行的 `holdingCurrency` |
+| 持仓币种、地区、行业 | `holdingCurrency`、`region`、`sector` | 控制换算和分析图表中的分类 |
+
+金额只填数字，不加货币符号、千位逗号或 `SGD` 后缀。例如填 `500000`，不要填 `500,000 SGD`。保留现有 `portfolioID`、`accountID`、`holdingID`；修改显示名称不需要修改这些 ID。
+
+## 三个常用修改
+
+1. **修改账户名称**：找到该组合有 `name` 的那一行，直接改名称。`bank`、`market`、`accountNumber`、`note` 也在这一行修改。
+2. **修改某项持仓**：修改它的 `quantity`、`price`、`averageCost`。如果只关心这项持仓值多少钱，可以填写 `holdingValue`，系统会按 `holdingValue ÷ price` 算出数量，此时 `quantity` 可以留空；要恢复按数量计算，就清空 `holdingValue` 并填写数量。正数目标需要 `price` 大于 0。
+3. **指定整个组合值多少钱**：在账户信息行填写 `portfolioValue`。例如账户币种为 SGD，填写 `500000` 后，组合总市值就是 500,000 SGD。系统先处理单项 `holdingValue`，再按比例缩放全部持仓数量，使总值达到目标；价格和平均成本不变。
+
+`portfolioValue` 留空时，总值由持仓计算。填写 `0` 会将该组合持仓数量置零。正数目标需要组合本来就有非零市值的持仓，不能给空组合或全零组合直接指定正数总值。
+
+**同时填写两种目标值时，以组合总值为最终目标。** 例如单项持仓先设为 10,000 SGD，而所有持仓合计为 100,000 SGD；若组合目标填 200,000 SGD，所有数量都会翻倍，这项持仓最终为 20,000 SGD。只设置组合目标会保留持仓比例及收益率；单独调整某项持仓则会改变配置比例。系统不会额外添加一笔现金来补差额。
+
+## 保存并应用
+
+1. 用 Excel、Numbers 或文本编辑器打开 `Portfolios.csv`。导入时将 ID、账号和证券代码设为**文本**，避免 `00100` 变成 `100`。
+2. 保存或导出为 **UTF-8 CSV**，保留表头。包含逗号、双引号或换行的内容由表格软件按 CSV 格式转义；不要把 `.xlsx` 或 `.numbers` 直接改名成 `.csv`。
+3. 在项目根目录运行以下命令，先校验，再查看各账户的市值、成本和持仓数量：
+
+   ```bash
+   ./scripts/sample-data.sh validate
+   ./scripts/sample-data.sh summary
+   ```
+
+4. 确认数据后，重新构建并安装 App。新安装会读取默认账户；已有安装会保留已保存的数据。要应用新的默认账户，在 **Menu → Settings → Restore demo data** 中确认恢复，此操作会替换本机已有的账户、持仓及编辑内容。
+
+CSV 是打包到 App 的资源，修改电脑上的文件不会直接更新已安装 App 或 TestFlight。配置错误会显示具体文件和字段信息，修复后再构建即可。目标价值只用于生成配置中的示例数据，不会重新缩放用户已保存的持仓或真实账单导入结果。
+
+## 新增账户或持仓
+
+- **新增账户**：复制现有账户的整组行，给它们填写同一个新的 `portfolioID`，修改账户信息和持仓，清空复制过来的 `accountID` 与 `holdingID`。系统会根据新组合标识与持仓信息生成稳定 ID。
+- **新增持仓**：在新行填写所属的 `portfolioID` 和持仓信息，账户字段、`accountID`、`holdingID` 可以留空。新持仓的默认 ID 根据组合标识、证券代码、币种和类别生成；同一组合要分别记录同代码、同币种、同类别的多笔持仓时，需要为每笔填写不同的 UUID `holdingID`。
+
+已有行的 ID 不要清空或更换。新增完成后运行校验；默认选中账户等高级关联配置在 [Others/](Others/README.md)。
+
+## 模板与样例账单
+
+同一张表还包含新增账户与导入演示的配置，按 `purpose` 区分：
+
+- `account`：首次运行或 Restore demo data 后显示的默认账户。
+- `template`：新增账户时使用的模板；`bank-connection` 是 Other bank account 的演示持仓，`linked-account` 是菜单新增账户模板，`statement-review` 和 `statement-import` 提供导入账户信息。
+- `holdings`：独立样例持仓；`statement-preview` 用于 Wealth 的 8 项账单预览，`csv-import` 用于菜单内的 2 项 CSV 示例，`csv-file-export` 用于导出 4 项持仓的测试账单。
+
+模板名称中的 `{bank}`、备注中的 `{source}` 会在使用时替换。`holdingsFrom` 表示复用另一组持仓，例如 `linked-account` 复用 `hsbc-sg-unit-trust`；需要调整它使用的持仓时，编辑来源组。复用会包含来源持仓的 `holdingValue` 调整，但不会继承来源账户的 `portfolioValue`：模板可以设置自己的组合目标。菜单新增账户时，该目标按最终所选市场的账户币种计算，例如选择香港后按 HKD 计算。新增模板账户会生成独立 ID，不会覆盖默认账户。
+
+导出可手动导入 App 的样例账单：
 
 ```bash
-./scripts/sample-data.sh validate
 ./scripts/sample-data.sh export-statement
 ```
 
-The export command writes `build/Sample/statement.csv` by default. Supply an output path as its final argument to save elsewhere, for example `./scripts/sample-data.sh export-statement /tmp/statement.csv`. The production loader generates this seven-column file from the `csv-file-export` set, preserving the four positions in the original downloadable statement example: AAPL, VOO, SGS, and SGD. **Edit [holdings.csv](holdings.csv), set `csv-file-export`, as the export source; do not maintain a second editable statement fixture.** Regenerate the exported file after changing those rows. The app's separate two-position “Try a sample statement” CSV uses the `csv-import` set.
+默认输出为 `build/Sample/statement.csv`，也可在命令末尾指定其他输出路径。修改 `Portfolios.csv` 中 `csv-file-export` 组后重新导出。`Portfolios.csv` 本身是配置文件，不能作为七列格式的账单导入。
 
-## Tables and relationships
+允许的 `category`：`Stocks`、`Unit trusts`、`Bonds`、`Cash and FX`、`Structured products`、`Insurance`、`Options`。其他字段及参数说明见 [Others/README.md](Others/README.md)。
 
-| Table | Purpose and key fields |
-| --- | --- |
-| [accounts.csv](accounts.csv) | Default linked accounts. `id` is a stable UUID; `holdingsSet` selects rows from `holdings.setID`. `currency` is the account's reporting currency, while `market`, `accountNumber`, and `institution` describe the account. |
-| [holdings.csv](holdings.csv) | All seed and template positions, grouped by `setID`. Each row has a UUID `id`, security `name`/`symbol`, `category`, `currency`, `quantity`, `price`, `averageCost`, and optional `region`/`sector`. |
-| [account_templates.csv](account_templates.csv) | Newly connected and imported portfolio metadata. Uses the same account fields with stable template keys such as `bank-connection` and `linked-account`. `holdingsSet` can be blank for a portfolio that receives imported holdings. |
-| [currencies.csv](currencies.csv) | Supported currency codes in `id`; `cnyRate` is the value of one unit in CNY. `wealthRegion` assigns currencies to the Wealth summary's illustrative regions. GIV uses each holding's explicit region, falling back to its account market. |
-| [settings.csv](settings.csv) | `id,value` pairs for default currency, account, bank, market, and Wealth scenario, plus imported portfolio labels and reference assumptions. ID settings refer to the corresponding table. |
-| [banks.csv](banks.csv) | Bank names and availability. `portfolioEnabled` controls the Add a portfolio bank chooser; `accountEnabled` controls the menu's Add account flow. |
-| [markets.csv](markets.csv) | Account markets: `name` is stored on the account, `shortName` labels the compact filter, and `currency` selects the default reporting currency for a newly added account. |
-| [legacy_accounts.csv](legacy_accounts.csv) | Compatibility rules for older saved demo accounts. `id` refers to a default account; `previousName` and the `signatureSymbols` list identify its earlier form. Keep these rules when changing current display names. |
-| [asset_profiles.csv](asset_profiles.csv) | Asset-class `id`, illustrative `riskScore`/`liquidityScore`, `riskLabel`, and fallback `defaultSector`. |
-| [regions.csv](regions.csv) | GIV region labels, matching `aliases`, and normalized map coordinates `mapX`/`mapY`. |
-| [performance.csv](performance.csv) | One `default` row defines the fixed `asOfDate`, initial date range, market/period/metric selection, `marketFilters`, and parameters used to generate illustrative history. |
-| [benchmarks.csv](benchmarks.csv) | Benchmark names, return and curve parameters, `colorHex`, chart `symbol`, and `defaultSelected`. Returns are independently generated for each benchmark. |
-| [analytics.csv](analytics.csv) | One `default` row defines `currencyIllustrationShock`, `concentrationThreshold`, and `defaultScenarioID`, which refers to `scenarios.id`. |
-| [scenarios.csv](scenarios.csv) | GIV stress scenarios. `currencies`, `assetClasses`, and `regions` select exposure; `shock` defines the signed change. `skipMatchingReportingCurrency` controls the currency scenario's reporting-currency exception. |
-| [wealth_scenarios.csv](wealth_scenarios.csv) | Wealth stress-test tabs. Each row defines `name`, `description`, positive `shockRate`, and `referenceDecline` in percentage points. |
-| [wealth_scenario_targets.csv](wealth_scenario_targets.csv) | Exposure rules for each `scenarioID` in `wealth_scenarios`. A row's nonblank `category` and `currency` must both match; any matching row includes a holding once. |
-| [wealth_regions.csv](wealth_regions.csv) | Wealth chart groups and colors. `name` matches `currencies.wealthRegion`; `color` is a decimal RGB integer. |
-| [products.csv](products.csv) | Product preview cards, their `category`, `title`, and SF Symbol `symbol`. |
-| [assistant_suggestions.csv](assistant_suggestions.csv) | Suggested prompts in display order. Each row has `id,prompt`. |
-| [assistant_rules.csv](assistant_rules.csv) | Local answer rules: `keywords` and `response`. Preserve supported response placeholders when editing the wording. |
+## English quick guide
 
-Within each table, keep IDs unique. Preserve file order when you want to preserve chooser, card, or scenario order. Every nonblank `holdingsSet` must match at least one `holdings.setID`. The `defaultAccountID`, `defaultBankID`, `defaultMarketID`, and `defaultWealthScenarioID` settings must refer to existing rows; the default bank must be available in both bank choosers.
+Edit **[Portfolios.csv](Portfolios.csv)** for all default accounts, holdings, account templates, and portfolio values. Other settings, including exchange rates and scenario assumptions, live in **[Others/](Others/README.md)**.
 
-The account templates have distinct purposes:
+Rows sharing a `portfolioID` belong to one group. Fill account metadata on its first row and leave those cells blank on subsequent rows; retain `portfolioID` on every row. Grouping uses the ID even after sorting. Any repeated nonempty metadata must agree.
 
-- `bank-connection`: the three-position demo connection opened from Add a portfolio; `{bank}` in its name is replaced with the selected bank.
-- `linked-account`: the account added through the menu; its named `holdingsSet` remains stable when the default account rows are reordered.
-- `statement-review`: the portfolio created after the Wealth statement review; `{source}` in its note is replaced with the document source.
-- `statement-import`: the older menu CSV import flow's initial account metadata.
+- Change `name`, `bank`, `market`, or `accountNumber` to edit account details.
+- Change `quantity`, `price`, and `averageCost` for a holding, or enter `holdingValue` in its `holdingCurrency` to derive quantity from value ÷ price. Quantity may then be blank; a positive target requires a positive price.
+- Enter `portfolioValue` in the account's `currency` to set total market value. After individual holding overrides, all quantities scale proportionally to this total. Prices and average costs stay unchanged. Leave it blank to calculate the total from holdings; zero sets all quantities to zero. A positive target requires a nonzero starting portfolio value.
 
-`statement-preview` in `holdings.setID` supplies the eight-position Wealth sample statement. `csv-import` supplies the two-position sample for the menu import flow, while `csv-file-export` supplies the four-position file produced by the export command for manual file-import tests. These preserve the distinct original samples; all are maintained in `holdings.csv`. That file itself is a configuration table and is not a seven-column statement import file.
+When both value overrides are set, the portfolio target applies last, so individual holding values may change again. This affects configured demo data only; saved user accounts and real statement imports are not rescaled.
 
-Default accounts and their holdings retain their configured UUIDs so saved references and migrations stay stable. A newly connected portfolio or sample import receives new account and holding UUIDs. Creating a second portfolio from the same template therefore creates a separate account rather than overwriting the first.
+Import IDs, account numbers, and symbols as text in Excel or Numbers. Preserve existing IDs and leading zeroes, use plain decimal numbers, and export UTF-8 CSV with the original header. Run `./scripts/sample-data.sh validate` and `./scripts/sample-data.sh summary`, then rebuild and install. On an existing installation, **Menu → Settings → Restore demo data** replaces saved accounts and holdings with the bundled defaults; rebuilding alone preserves saved data.
 
-## CSV values and calculations
+For a new account, copy a group, assign a new `portfolioID`, and clear copied `accountID` and `holdingID` values. For a new holding, add its position fields and the destination `portfolioID`; leave `holdingID` blank. New blank IDs are generated deterministically. Duplicate lots with the same symbol, currency, and category in one portfolio require distinct explicit UUIDs. Preserve IDs on existing rows.
 
-Use these exact enum values; adding a new code requires a corresponding model change:
-
-- Currency: `SGD`, `USD`, `HKD`, `CNY`.
-- Category: `Stocks`, `Unit trusts`, `Bonds`, `Cash and FX`, `Structured products`, `Insurance`, `Options`.
-- Boolean: `true` or `false`.
-
-Use decimal numbers without currency signs, thousands separators, or `%`. A fractional shock of `-0.10` means a 10% decline in `scenarios.shock`. `analytics.currencyIllustrationShock` also uses a signed fraction; its default is `-0.10`, and its accepted range is `-1...1`. Wealth's `shockRate` uses positive `0.10` to calculate the decline amount. `referenceDecline=6` and `annualReturnPercent=8.7` mean 6% and 8.7%, respectively. Preserve these unit differences when editing.
-
-Market value is `quantity × price`; invested cost is `quantity × averageCost`; unrealised gain/loss is their difference. Do not add a separate total-value column: account totals and comparisons recalculate from the positions and `currencies.cnyRate`. Configure positive quantities and valid finite prices/costs. Update the descriptive scenario text and its numeric shock together.
-
-For every supported reporting currency, the combined value and cost of all configured holdings must each remain below `100,000,000,000,000` after conversion. The validator checks this aggregate limit to prevent chart values from overflowing. `performance.maxYears` must be greater than `0` and no greater than `100`.
-
-Save in UTF-8 CSV, with a comma separating columns. Quote fields containing commas, quotation marks, or line breaks; double an embedded quotation mark. For example, a security name containing a comma is saved as `"Example Fund, Class A"`. List fields such as `keywords`, `marketFilters`, `aliases`, and `signatureSymbols` use `|` between entries. In `products.title`, `\n` is an intentional display line break.
-
-In Excel or Numbers, import **IDs, account numbers, security symbols, and all list fields as text** before editing. Otherwise a security code such as `00100` can become `100`, a date-like symbol may be converted to a date, or an account number may be reformatted. Keep dates as `YYYY-MM-DD`. Export CSV rather than renaming an `.xlsx` or `.numbers` file, then check that leading zeroes and quoted fields are still intact. CSV tables have no comment rows; use this guide for notes.
-
-Risk scores, exchange rates, scenario shocks, and benchmark/history parameters are demonstration inputs. They are not live quotes or real historical performance. The assistant uses local rules, and connected banks do not retrieve real accounts.
-
-## 中文使用说明
-
-日常改数据，主要编辑 `accounts.csv`（默认账户）、`holdings.csv`（持仓）、`account_templates.csv`（新增账户模板）和 `settings.csv`（默认选择）。上方表格列出了全部 20 张 CSV 的职责与关键字段，其他文件分别控制银行选项、地区、风险、收益演示、产品和助手回答。
-
-1. **修改现有资产**：在 `holdings.csv` 找到持仓，修改 `quantity`、`price`、`averageCost`。市值、成本、收益和账户对比会据此计算，无需另填总金额。
-2. **添加账户**：在 `accounts.csv` 新增一行并使用新的 UUID；填写 `holdingsSet`，在 `holdings.csv` 中新增相同 `setID` 的持仓，每条持仓也使用独立 UUID。名称可修改，已有 ID 和外键不要随意更换。
-3. **调整默认进入的账户或银行**：修改 `settings.csv` 的 `defaultAccountID`、`defaultBankID`、`defaultMarketID` 等字段，值必须对应目标表的 `id`。新增银行时，两个 `Enabled` 字段决定它在哪个入口出现。
-4. **修改样例账单**：`statement-preview` 是 Wealth 入口的 8 条样例持仓；`csv-import` 是 App 菜单 CSV 导入页的 2 条样例持仓；`csv-file-export` 保留原文件示例中的 AAPL、VOO、SGS、SGD 共 4 条持仓，用于生成手动导入测试文件。以 `Sample/holdings.csv` 为唯一持仓数据源，执行 `./scripts/sample-data.sh export-statement` 可将 `csv-file-export` 导出为 `build/Sample/statement.csv`，也可以在命令末尾指定其他输出路径。不要另维护一份账单样例数据。新增模板生成新 UUID，不会复用默认账户 ID。
-5. **校验并让修改生效**：先在项目根目录执行 `./scripts/sample-data.sh validate`，使用与 App 相同的加载器校验表格。配置共 20 张表、8 个默认账户和 57 条持仓：40 条默认账户持仓、3 条银行连接持仓、8 条 Wealth 账单样例、2 条 App 内 CSV 样例、4 条文件导出样例。CSV 是编译资源，校验后需要重新构建并安装 App。首次启动直接加载新配置；已有数据会保留。需要替换本机账户和持仓时，在 **Menu → Settings → Restore demo data** 中确认恢复，这会覆盖本机的账户及持仓修改。现有空组合不会自动补回数据。
-6. **表格软件编辑**：用 UTF-8 CSV 导入和导出；ID、账号、证券代码提前设为文本，保留 `00100` 等前导零。包含逗号或换行的内容用双引号包裹，内容中的双引号写成两个双引号；列表用 `|` 分隔。不要把 `.xlsx` 或 `.numbers` 直接改扩展名为 `.csv`。
-
-币种与资产类别必须使用上方列出的英文枚举值。`scenarios.shock=-0.10` 表示下跌 10%；`analytics.currencyIllustrationShock` 同样使用带正负号的小数，默认 `-0.10`，允许范围为 `-1...1`。`wealth_scenarios.shockRate=0.10` 表示按 10% 计算损失，而 `referenceDecline=6` 表示 6%。这些字段单位不同，调整数值后也要同步修改说明文字。
-
-所有配置持仓换算为任一支持的展示币种后，市值合计和成本合计都必须小于 `100,000,000,000,000`；校验器会检查这个总量上限，避免图表数值溢出。`performance.maxYears` 必须大于 `0` 且不超过 `100`。
-
-配置格式、字段或关联错误会在启动错误页显示；修复 CSV 后重新构建即可，不会静默切换到其他硬编码数据。汇率、风险评分、历史曲线、基准和压力情景均用于演示，并非真实行情；银行连接和助手分析也在本地完成。
+`purpose=account` denotes defaults, `template` denotes new-account templates, and `holdings` denotes standalone statement samples. `holdingsFrom` copies the source positions including their `holdingValue` adjustments, but does not inherit the source account's `portfolioValue`. Each template has its own optional total target, measured in the account's final currency after market selection. See [Others/README.md](Others/README.md) for structural fields and advanced settings.

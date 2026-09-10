@@ -1,5 +1,0 @@
-id,name,institution,currency,colorIndex,note,market,accountNumber,holdingsSet
-bank-connection,{bank} demo portfolio,DBS,SGD,2,Local sample account from the demo bank connection.,Singapore,,bank-connection
-linked-account,{bank} Investment Account,HSBC,SGD,2,Diversified funds across regions and investment styles,Singapore,,hsbc-sg-unit-trust
-statement-review,Statement portfolio,Statement,HKD,0,Imported from {source},Hong Kong,,
-statement-import,Imported portfolio,Statement,SGD,0,,Singapore,,

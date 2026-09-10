@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct SampleConfigurationError: LocalizedError {
     let message: String
@@ -89,9 +90,6 @@ enum SampleCSV {
 struct SampleCatalog {
     private let tables: [String: [SampleRecord]]
     private static let schemas: [String: String] = [
-        "accounts": "id,name,institution,currency,colorIndex,note,market,accountNumber,holdingsSet",
-        "account_templates": "id,name,institution,currency,colorIndex,note,market,accountNumber,holdingsSet",
-        "holdings": "id,setID,name,symbol,category,currency,quantity,price,averageCost,region,sector",
         "currencies": "id,symbol,cnyRate,wealthRegion",
         "settings": "id,value",
         "legacy_accounts": "id,previousName,signatureSymbols",
@@ -112,14 +110,15 @@ struct SampleCatalog {
     ]
 
     static func load(directory: URL) throws -> SampleCatalog {
-        var tables: [String: [SampleRecord]] = [:]
+        var tables = try portfolioTables(directory: directory)
         for (name, schema) in schemas.sorted(by: { $0.key < $1.key }) {
-            let url = directory.appendingPathComponent(name + ".csv")
+            let source = "Others/" + name + ".csv"
+            let url = directory.appendingPathComponent(source)
             let text: String
             do { text = try String(contentsOf: url, encoding: .utf8) }
-            catch { throw SampleConfigurationError(message: "\(name).csv: Cannot read this UTF-8 configuration table. \(error.localizedDescription)") }
-            let records = try SampleCSV.parse(text, source: name + ".csv")
-            guard let first = records.first else { throw SampleConfigurationError(message: "\(name).csv: At least one data row is required.") }
+            catch { throw SampleConfigurationError(message: "\(source): Cannot read this UTF-8 configuration table. \(error.localizedDescription)") }
+            let records = try SampleCSV.parse(text, source: source)
+            guard let first = records.first else { throw SampleConfigurationError(message: "\(source): At least one data row is required.") }
             let expected = Set(schema.components(separatedBy: ","))
             guard Set(first.values.keys) == expected else { throw first.error("Expected columns: \(schema).") }
             var ids = Set<String>()
@@ -130,7 +129,89 @@ struct SampleCatalog {
         }
         let catalog = SampleCatalog(tables: tables)
         try catalog.validate()
+        try catalog.validatePortfolioValues()
         return catalog
+    }
+
+    private static func stableID(_ components: [String]) -> String {
+        // Length-prefixed components avoid ambiguous keys when BA labels contain separators.
+        let key = components.map { "\($0.utf8.count):\($0)" }.joined()
+        var bytes = Array(SHA256.hash(data: Data(key.utf8)).prefix(16))
+        bytes[6] = (bytes[6] & 0x0F) | 0x50
+        bytes[8] = (bytes[8] & 0x3F) | 0x80
+        let hex = bytes.map { String(format: "%02X", $0) }.joined()
+        let offsets = [0, 8, 12, 16, 20, 32]
+        return zip(offsets, offsets.dropFirst()).map { start, end in
+            String(hex[hex.index(hex.startIndex, offsetBy: start)..<hex.index(hex.startIndex, offsetBy: end)])
+        }.joined(separator: "-")
+    }
+
+    /// The only BA input table is normalized into internal account/holding/template records.
+    /// Group keys, rather than neighboring rows, bind holdings to accounts after spreadsheet sorting.
+    private static func portfolioTables(directory: URL) throws -> [String: [SampleRecord]] {
+        let source = "Portfolios.csv"
+        let text: String
+        do { text = try String(contentsOf: directory.appendingPathComponent(source), encoding: .utf8) }
+        catch { throw SampleConfigurationError(message: "\(source): Cannot read the UTF-8 portfolio configuration. \(error.localizedDescription)") }
+        let records = try SampleCSV.parse(text, source: source)
+        let columns = "portfolioID,purpose,name,bank,market,currency,portfolioValue,holdingName,symbol,category,holdingCurrency,quantity,price,averageCost,holdingValue,region,sector,accountNumber,note,colorIndex,accountID,holdingID,holdingsFrom".components(separatedBy: ",")
+        guard let first = records.first else { throw SampleConfigurationError(message: "Portfolios.csv: At least one portfolio is required.") }
+        guard Set(first.values.keys) == Set(columns) else { throw first.error("Expected columns: \(columns.joined(separator: ",")).") }
+        var groupOrder: [String] = [], groups: [String: [SampleRecord]] = [:]
+        for record in records {
+            let groupID = record.string("portfolioID")
+            guard !groupID.isEmpty else { throw record.error("portfolioID is required on every row, including additional holdings.") }
+            if groups[groupID] == nil { groupOrder.append(groupID) }
+            groups[groupID, default: []].append(record)
+        }
+        let metadata = ["purpose", "name", "bank", "market", "currency", "portfolioValue", "accountNumber", "note", "colorIndex", "accountID", "holdingsFrom"]
+        let holdingFields = ["holdingName", "symbol", "category", "holdingCurrency", "quantity", "price", "averageCost", "holdingValue", "region", "sector", "holdingID"]
+        var tables: [String: [SampleRecord]] = ["accounts": [], "account_templates": [], "holdings": []]
+        for groupID in groupOrder {
+            let group = groups[groupID]!
+            var info: [String: String] = [:]
+            for record in group {
+                for key in metadata where !record.string(key).isEmpty {
+                    let value = record.string(key)
+                    if let previous = info[key], previous != value {
+                        throw record.error("Portfolio '\(groupID)' has conflicting \(key) values. Fill account details once, or repeat exactly the same value.")
+                    }
+                    info[key] = value
+                }
+            }
+            let owner = group.first { !$0.string("purpose").isEmpty } ?? group[0]
+            let purpose = info["purpose"] ?? ""
+            guard ["account", "template", "holdings"].contains(purpose) else { throw owner.error("Portfolio '\(groupID)' needs purpose account, template or holdings.") }
+            var hasHoldings = false
+            for record in group where holdingFields.contains(where: { !record.string($0).isEmpty }) {
+                hasHoldings = true
+                var quantity = record.string("quantity")
+                if !record.string("holdingValue").isEmpty {
+                    guard let target = Double(record.string("holdingValue")), target.isFinite, target >= 0, target < 1e14 else { throw record.error("holdingValue must be a nonnegative amount below 100 trillion in holdingCurrency.") }
+                    guard let price = Double(record.string("price")), price.isFinite, price >= 0, target == 0 || price > 0 else { throw record.error("A positive holdingValue requires a positive price.") }
+                    let adjusted = target == 0 ? 0 : target / price
+                    guard adjusted.isFinite else { throw record.error("holdingValue / price produces a quantity that is too large.") }
+                    quantity = String(adjusted)
+                }
+                let id = record.string("holdingID").nilIfEmpty ?? stableID(["holding", groupID, record.string("symbol"), record.string("holdingCurrency"), record.string("category")])
+                let values = ["id": id, "setID": groupID, "name": record.string("holdingName"), "symbol": record.string("symbol"), "category": record.string("category"), "currency": record.string("holdingCurrency"), "quantity": quantity, "price": record.string("price"), "averageCost": record.string("averageCost"), "region": record.string("region"), "sector": record.string("sector")]
+                tables["holdings"]!.append(SampleRecord(values: values, lineNumber: record.lineNumber, source: source))
+            }
+            let holdingSource = info["holdingsFrom"] ?? ""
+            guard holdingSource.isEmpty || (purpose == "template" && !hasHoldings) else { throw owner.error("holdingsFrom is only for templates without their own holding rows.") }
+            if purpose == "holdings" {
+                let accountFields = metadata.filter { !["purpose", "name"].contains($0) }
+                guard accountFields.allSatisfy({ (info[$0] ?? "").isEmpty }) else { throw owner.error("A holdings-only group cannot set account details or portfolioValue.") }
+                continue
+            }
+            if purpose == "template", !(info["accountID"] ?? "").isEmpty { throw owner.error("Templates create fresh IDs; leave accountID blank.") }
+            let id = purpose == "account" ? (info["accountID"]?.nilIfEmpty ?? stableID(["account", groupID])) : groupID
+            let values = ["id": id, "name": info["name"] ?? "", "institution": info["bank"] ?? "", "currency": info["currency"] ?? "", "colorIndex": info["colorIndex"]?.nilIfEmpty ?? "0", "note": info["note"] ?? "", "market": info["market"] ?? "", "accountNumber": info["accountNumber"] ?? "", "holdingsSet": holdingSource.isEmpty ? (hasHoldings ? groupID : "") : holdingSource, "portfolioValue": info["portfolioValue"] ?? ""]
+            tables[purpose == "account" ? "accounts" : "account_templates"]!.append(SampleRecord(values: values, lineNumber: owner.lineNumber, source: source))
+        }
+        guard !tables["accounts"]!.isEmpty else { throw first.error("At least one group with purpose account is required.") }
+        guard !tables["account_templates"]!.isEmpty, !tables["holdings"]!.isEmpty else { throw first.error("Required template and sample holding groups are missing.") }
+        return tables
     }
 
     func rows(_ table: String) -> [SampleRecord] { tables[table]! }
@@ -138,11 +219,73 @@ struct SampleCatalog {
     func setting(_ key: String) -> String { row("settings", id: key).string("value") }
 
     var accounts: [InvestmentAccount] { rows("accounts").map { account(from: $0, id: UUID(uuidString: $0.id)!, freshHoldings: false) } }
-    func makeAccount(template: String) -> InvestmentAccount { account(from: row("account_templates", id: template), id: UUID(), freshHoldings: true) }
+    func makeAccount(template: String, currency: Currency? = nil) -> InvestmentAccount { account(from: row("account_templates", id: template), id: UUID(), freshHoldings: true, currencyOverride: currency) }
     func holdings(in setID: String) -> [Holding] { holdings(in: setID, freshIDs: true) }
 
-    private func account(from row: SampleRecord, id: UUID, freshHoldings: Bool) -> InvestmentAccount {
-        InvestmentAccount(id: id, name: row.string("name"), institution: row.string("institution"), currency: Currency(rawValue: row.string("currency"))!, colorIndex: row.int("colorIndex"), note: row.string("note"), market: row.string("market"), holdings: holdings(in: row.string("holdingsSet"), freshIDs: freshHoldings), accountNumber: row.string("accountNumber").nilIfEmpty)
+    private func account(from row: SampleRecord, id: UUID, freshHoldings: Bool, applyTarget: Bool = true, currencyOverride: Currency? = nil) -> InvestmentAccount {
+        var account = InvestmentAccount(id: id, name: row.string("name"), institution: row.string("institution"), currency: currencyOverride ?? Currency(rawValue: row.string("currency"))!, colorIndex: row.int("colorIndex"), note: row.string("note"), market: row.string("market"), holdings: holdings(in: row.string("holdingsSet"), freshIDs: freshHoldings), accountNumber: row.string("accountNumber").nilIfEmpty)
+        if applyTarget, let target = Double(row.string("portfolioValue")) {
+            let current = value(of: account, in: account.currency)
+            let factor = current > 0 ? target / current : 0
+            account.holdings = account.holdings.map { holding in
+                var holding = holding
+                holding.quantity *= factor
+                return holding
+            }
+        }
+        return account
+    }
+
+    // Scoped rates make command-line summaries and edited-catalog validation independent
+    // from Bundle.main and from the app's cached configuration.
+    func value(of account: InvestmentAccount, in currency: Currency) -> Double {
+        account.holdings.reduce(0) { $0 + converted($1.value, from: $1.currency, to: currency) }
+    }
+    func cost(of account: InvestmentAccount, in currency: Currency) -> Double {
+        account.holdings.reduce(0) { $0 + converted($1.cost, from: $1.currency, to: currency) }
+    }
+    private func converted(_ value: Double, from source: Currency, to target: Currency) -> Double {
+        value * row("currencies", id: source.rawValue).double("cnyRate") / row("currencies", id: target.rawValue).double("cnyRate")
+    }
+
+    private func validatePortfolioValues() throws {
+        var totals: [Currency: (value: Double, cost: Double)] = [:]
+        for row in rows("accounts") + rows("account_templates") {
+            let targetText = row.string("portfolioValue")
+            if !targetText.isEmpty {
+                guard let target = Double(targetText), target.isFinite, target >= 0, target < 1e14 else { throw row.error("portfolioValue must be a nonnegative amount below 100 trillion in the account currency.") }
+                let original = account(from: row, id: UUID(), freshHoldings: false, applyTarget: false)
+                let current = value(of: original, in: original.currency)
+                guard target == 0 || current > 0 else { throw row.error("A positive portfolioValue needs at least one holding with a positive value. Add holdings or clear the target.") }
+                let factor = current > 0 ? target / current : 0
+                guard factor.isFinite, original.holdings.allSatisfy({ ($0.quantity * factor).isFinite }) else { throw row.error("portfolioValue produces quantities that are too large.") }
+            }
+            let resolved = account(from: row, id: UUID(), freshHoldings: false)
+            for currency in Currency.allCases {
+                let value = value(of: resolved, in: currency), cost = cost(of: resolved, in: currency)
+                let previous = totals[currency] ?? (0, 0)
+                let sum = (value: previous.value + value, cost: previous.cost + cost)
+                guard sum.value.isFinite, sum.cost.isFinite, sum.value < 1e14, sum.cost < 1e14 else { throw row.error("Configured portfolio values or costs exceed the supported total in \(currency.rawValue). Reduce the target or review exchange rates.") }
+                totals[currency] = sum
+            }
+        }
+        // A bank template can be created in the currency of a market selected in the UI.
+        // Validate those targets before allowing the configuration to reach that flow.
+        for row in rows("account_templates") where !row.string("portfolioValue").isEmpty {
+            let target = row.double("portfolioValue")
+            for selectedCurrency in Currency.allCases {
+                let original = account(from: row, id: UUID(), freshHoldings: false, applyTarget: false, currencyOverride: selectedCurrency)
+                let current = value(of: original, in: selectedCurrency)
+                guard target == 0 || current > 0 else { throw row.error("portfolioValue cannot be reached in \(selectedCurrency.rawValue) with zero starting value.") }
+                let factor = current > 0 ? target / current : 0
+                guard factor.isFinite, original.holdings.allSatisfy({ ($0.quantity * factor).isFinite }) else { throw row.error("portfolioValue produces quantities that are too large in \(selectedCurrency.rawValue).") }
+                let resolved = account(from: row, id: UUID(), freshHoldings: false, currencyOverride: selectedCurrency)
+                for currency in Currency.allCases {
+                    let value = value(of: resolved, in: currency), cost = cost(of: resolved, in: currency)
+                    guard value.isFinite, cost.isFinite, value < 1e14, cost < 1e14 else { throw row.error("Template portfolioValue exceeds the supported total when created in \(selectedCurrency.rawValue).") }
+                }
+            }
+        }
     }
     private func holdings(in setID: String, freshIDs: Bool) -> [Holding] {
         rows("holdings").filter { $0.string("setID") == setID }.map { row in
@@ -231,7 +374,11 @@ struct SampleCatalog {
             try require(ids("account_templates").contains(required), rows("account_templates")[0], "Required template '\(required)' is missing.")
         }
         for required in ["statement-preview", "csv-import", "csv-file-export"] { try require(sets.contains(required), rows("holdings")[0], "Required holding set '\(required)' is missing.") }
-        for row in rows("legacy_accounts") { try reference(row, "id", ids("accounts")); try nonempty(row, "previousName", "signatureSymbols") }
+        var legacyIDs = Set<UUID>()
+        for row in rows("legacy_accounts") {
+            guard let id = UUID(uuidString: row.id), legacyIDs.insert(id).inserted else { throw row.error("id must be a unique UUID.") }
+            try nonempty(row, "previousName", "signatureSymbols")
+        }
         for row in rows("banks") { try nonempty(row, "name"); try boolean(row, "portfolioEnabled"); try boolean(row, "accountEnabled") }
         for row in rows("markets") { try nonempty(row, "name", "shortName"); try reference(row, "currency", currencies) }
         try unique("markets", "name"); try unique("banks", "name"); try unique("regions", "name"); try unique("wealth_regions", "name")
@@ -244,10 +391,11 @@ struct SampleCatalog {
         for row in rows("wealth_scenarios") { try require(rows("wealth_scenario_targets").contains { $0.string("scenarioID") == row.id }, row, "At least one target is required.") }
         let requiredSettings = ["defaultCurrency", "defaultAccountID", "defaultBankID", "defaultMarketID", "defaultWealthScenarioID", "wealthReferenceAssumptions", "statementPreviewSource", "statementCSVFilename", "defaultManualAccountName"]
         for key in requiredSettings {
-            guard let row = rows("settings").first(where: { $0.id == key }) else { throw SampleConfigurationError(message: "settings.csv: Missing setting '\(key)'.") }
+            guard let row = rows("settings").first(where: { $0.id == key }) else { throw SampleConfigurationError(message: "Others/settings.csv: Missing setting '\(key)'.") }
             try nonempty(row, "value")
         }
-        for (key, allowed) in [("defaultCurrency", currencies), ("defaultAccountID", ids("accounts")), ("defaultBankID", ids("banks")), ("defaultMarketID", ids("markets")), ("defaultWealthScenarioID", ids("wealth_scenarios"))] {
+        try require(UUID(uuidString: setting("defaultAccountID")) != nil, row("settings", id: "defaultAccountID"), "defaultAccountID must be a UUID. If that account is removed, the first configured account is used.")
+        for (key, allowed) in [("defaultCurrency", currencies), ("defaultBankID", ids("banks")), ("defaultMarketID", ids("markets")), ("defaultWealthScenarioID", ids("wealth_scenarios"))] {
             try reference(row("settings", id: key), "value", allowed)
         }
         let bank = row("banks", id: setting("defaultBankID"))
@@ -316,7 +464,7 @@ enum SampleData {
     }
     static var accounts: [InvestmentAccount] { catalog.accounts }
     static func defaultAccount(in savedAccounts: [InvestmentAccount]) -> InvestmentAccount? {
-        let configured = accounts.first { $0.id.uuidString.caseInsensitiveCompare(setting("defaultAccountID")) == .orderedSame }!
+        let configured = accounts.first { $0.id.uuidString.caseInsensitiveCompare(setting("defaultAccountID")) == .orderedSame } ?? accounts[0]
         // Earlier app versions used random IDs; their migration preserves those IDs and user edits.
         return savedAccounts.first { $0.id == configured.id }
             ?? savedAccounts.first {
@@ -329,7 +477,7 @@ enum SampleData {
     static func row(_ table: String, id: String) -> SampleRecord { catalog.row(table, id: id) }
     static func setting(_ key: String) -> String { catalog.setting(key) }
     static func number(_ key: String) -> Double { Double(setting(key))! }
-    static func makeAccount(template: String) -> InvestmentAccount { catalog.makeAccount(template: template) }
+    static func makeAccount(template: String, currency: Currency? = nil) -> InvestmentAccount { catalog.makeAccount(template: template, currency: currency) }
     static func holdings(in setID: String) -> [Holding] { catalog.holdings(in: setID) }
     static var statementCSV: String { catalog.statementCSV }
 }

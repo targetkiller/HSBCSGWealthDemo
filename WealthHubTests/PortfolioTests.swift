@@ -214,13 +214,11 @@ final class PortfolioTests: XCTestCase {
             let originalAccount = try XCTUnwrap(original.accounts.first)
             let originalHolding = try XCTUnwrap(originalAccount.holdings.first)
             let configuredQuantity = originalHolding.quantity + 123
-            try rewriteTable("accounts", in: directory) { rows in
-                let index = try XCTUnwrap(rows.firstIndex { $0["id"] == originalAccount.id.uuidString })
+            try rewriteTable("Portfolios", in: directory) { rows in
+                let index = try XCTUnwrap(rows.firstIndex { $0["accountID"] == originalAccount.id.uuidString })
                 rows[index]["name"] = "My configurable, \"portfolio\""
-            }
-            try rewriteTable("holdings", in: directory) { rows in
-                let index = try XCTUnwrap(rows.firstIndex { $0["id"] == originalHolding.id.uuidString })
-                rows[index]["quantity"] = String(configuredQuantity)
+                let holdingIndex = try XCTUnwrap(rows.firstIndex { $0["holdingID"] == originalHolding.id.uuidString })
+                rows[holdingIndex]["quantity"] = String(configuredQuantity)
             }
             let configured = try SampleCatalog.load(directory: directory)
             let account = try XCTUnwrap(configured.accounts.first { $0.id == originalAccount.id })
@@ -231,16 +229,30 @@ final class PortfolioTests: XCTestCase {
         }
     }
 
-    func testReorderingAccountsKeepsNamedTemplateHoldings() throws {
+    func testReorderingPortfolioRowsKeepsMetadataAndNamedTemplateHoldings() throws {
         try withSampleDirectory { directory in
             let original = try SampleCatalog.load(directory: directory)
             let template = original.makeAccount(template: "linked-account")
-            try rewriteTable("accounts", in: directory) { $0.reverse() }
+            try rewriteTable("Portfolios", in: directory) { $0.reverse() }
             let reordered = try SampleCatalog.load(directory: directory)
             XCTAssertEqual(reordered.accounts.map(\.id), original.accounts.reversed().map(\.id))
             let linkedAccount = reordered.makeAccount(template: "linked-account")
-            XCTAssertEqual(linkedAccount.holdings.map(\.symbol), template.holdings.map(\.symbol))
-            XCTAssertEqual(linkedAccount.holdings.map(\.quantity), template.holdings.map(\.quantity))
+            XCTAssertEqual(linkedAccount.holdings.sorted { $0.symbol < $1.symbol }.map(\.symbol),
+                           template.holdings.sorted { $0.symbol < $1.symbol }.map(\.symbol))
+            XCTAssertEqual(linkedAccount.holdings.sorted { $0.symbol < $1.symbol }.map(\.quantity),
+                           template.holdings.sorted { $0.symbol < $1.symbol }.map(\.quantity))
+            XCTAssertTrue(Set(linkedAccount.holdings.map(\.id)).isDisjoint(with: template.holdings.map(\.id)))
+            for account in reordered.accounts {
+                let previous = try XCTUnwrap(original.accounts.first { $0.id == account.id })
+                XCTAssertEqual(account.name, previous.name)
+                XCTAssertEqual(account.institution, previous.institution)
+                XCTAssertEqual(account.currency, previous.currency)
+                XCTAssertEqual(account.accountNumber, previous.accountNumber)
+                XCTAssertEqual(account.holdings.sorted { $0.id.uuidString < $1.id.uuidString },
+                               previous.holdings.sorted { $0.id.uuidString < $1.id.uuidString })
+            }
+            XCTAssertEqual(reordered.row("settings", id: "defaultAccountID").string("value"),
+                           original.row("settings", id: "defaultAccountID").string("value"))
         }
     }
 
@@ -261,18 +273,235 @@ final class PortfolioTests: XCTestCase {
         XCTAssertEqual(SampleData.defaultAccount(in: [firstCurrentAccount])?.id, firstCurrentAccount.id)
     }
 
+    func testPortfolioValueScalesMixedCurrencyHoldingsAndCostsUsingConfiguredRates() throws {
+        try withSampleDirectory { directory in
+            try rewriteTable("currencies", in: directory) { rows in
+                let index = try XCTUnwrap(rows.firstIndex { $0["id"] == "USD" })
+                rows[index]["cnyRate"] = "8.1"
+            }
+            let original = try SampleCatalog.load(directory: directory)
+            let originalAccount = try XCTUnwrap(original.accounts.first { $0.accountNumber == "001-223344-001" })
+            let originalTemplate = original.makeAccount(template: "linked-account")
+            XCTAssertGreaterThan(Set(originalAccount.holdings.map(\.currency)).count, 1)
+            let originalValue = configuredValue(of: originalAccount, catalog: original)
+            let originalCost = configuredValue(of: originalAccount, catalog: original, useCost: true)
+            let target = originalValue * 1.5
+            let templateTarget = configuredValue(of: originalTemplate, catalog: original) * 0.5
+            try rewriteTable("Portfolios", in: directory) { rows in
+                let accountIndex = try XCTUnwrap(rows.firstIndex { $0["accountID"] == originalAccount.id.uuidString })
+                rows[accountIndex]["portfolioValue"] = String(target)
+                let templateIndex = try XCTUnwrap(rows.firstIndex { $0["portfolioID"] == "linked-account" })
+                rows[templateIndex]["portfolioValue"] = String(templateTarget)
+            }
+
+            let configured = try SampleCatalog.load(directory: directory)
+            let account = try XCTUnwrap(configured.accounts.first { $0.id == originalAccount.id })
+            XCTAssertEqual(configuredValue(of: account, catalog: configured), target, accuracy: 0.001)
+            XCTAssertEqual(configuredValue(of: account, catalog: configured, useCost: true), originalCost * 1.5, accuracy: 0.001)
+            for holding in account.holdings {
+                let previous = try XCTUnwrap(originalAccount.holdings.first { $0.id == holding.id })
+                XCTAssertEqual(holding.quantity, previous.quantity * 1.5, accuracy: 0.000001)
+                XCTAssertEqual(holding.price, previous.price)
+                XCTAssertEqual(holding.averageCost, previous.averageCost)
+            }
+            let template = configured.makeAccount(template: "linked-account")
+            XCTAssertEqual(configuredValue(of: template, catalog: configured), templateTarget, accuracy: 0.001)
+            let hongKongTemplate = configured.makeAccount(template: "linked-account", currency: .HKD)
+            XCTAssertEqual(hongKongTemplate.currency, .HKD)
+            XCTAssertEqual(configured.value(of: hongKongTemplate, in: .HKD), templateTarget, accuracy: 0.001)
+            for holding in template.holdings {
+                let previous = try XCTUnwrap(originalTemplate.holdings.first { $0.symbol == holding.symbol })
+                XCTAssertEqual(holding.quantity, previous.quantity * 0.5, accuracy: 0.000001)
+                XCTAssertEqual(holding.price, previous.price)
+                XCTAssertEqual(holding.averageCost, previous.averageCost)
+            }
+        }
+    }
+
+    func testHoldingValueUsesHoldingCurrencyBeforeApplyingPortfolioValue() throws {
+        try withSampleDirectory { directory in
+            let original = try SampleCatalog.load(directory: directory)
+            let originalAccount = try XCTUnwrap(original.accounts.first { $0.accountNumber == "001-223344-001" })
+            let originalHolding = try XCTUnwrap(originalAccount.holdings.first { $0.currency == .USD })
+            XCTAssertNotEqual(originalAccount.currency, originalHolding.currency)
+            let holdingTarget = 750.0
+            try rewriteTable("Portfolios", in: directory) { rows in
+                let index = try XCTUnwrap(rows.firstIndex { $0["holdingID"] == originalHolding.id.uuidString })
+                rows[index]["holdingValue"] = String(holdingTarget)
+                rows[index]["quantity"] = ""
+            }
+            let holdingConfigured = try SampleCatalog.load(directory: directory)
+            let account = try XCTUnwrap(holdingConfigured.accounts.first { $0.id == originalAccount.id })
+            let holding = try XCTUnwrap(account.holdings.first { $0.id == originalHolding.id })
+            XCTAssertEqual(holding.quantity, holdingTarget / originalHolding.price, accuracy: 0.000001)
+            XCTAssertEqual(holding.value, holdingTarget, accuracy: 0.001)
+            XCTAssertEqual(holding.price, originalHolding.price)
+            XCTAssertEqual(holding.averageCost, originalHolding.averageCost)
+            XCTAssertEqual(account.holdings.filter { $0.id != holding.id }, originalAccount.holdings.filter { $0.id != holding.id })
+
+            let portfolioTarget = configuredValue(of: account, catalog: holdingConfigured) * 2
+            try rewriteTable("Portfolios", in: directory) { rows in
+                let index = try XCTUnwrap(rows.firstIndex { $0["accountID"] == originalAccount.id.uuidString })
+                rows[index]["portfolioValue"] = String(portfolioTarget)
+            }
+            let bothConfigured = try SampleCatalog.load(directory: directory)
+            let scaledAccount = try XCTUnwrap(bothConfigured.accounts.first { $0.id == originalAccount.id })
+            let scaledHolding = try XCTUnwrap(scaledAccount.holdings.first { $0.id == originalHolding.id })
+            XCTAssertEqual(configuredValue(of: scaledAccount, catalog: bothConfigured), portfolioTarget, accuracy: 0.001)
+            XCTAssertEqual(scaledHolding.value, holdingTarget * 2, accuracy: 0.001)
+            XCTAssertEqual(scaledHolding.cost, holding.cost * 2, accuracy: 0.001)
+        }
+    }
+
+    func testZeroPortfolioAndHoldingValuesRemainValid() throws {
+        try withSampleDirectory { directory in
+            let original = try SampleCatalog.load(directory: directory)
+            let originalAccount = try XCTUnwrap(original.accounts.first)
+            let otherAccount = try XCTUnwrap(original.accounts.first { $0.id != originalAccount.id })
+            let otherHolding = try XCTUnwrap(otherAccount.holdings.first)
+            try rewriteTable("Portfolios", in: directory) { rows in
+                let index = try XCTUnwrap(rows.firstIndex { $0["accountID"] == originalAccount.id.uuidString })
+                rows[index]["portfolioValue"] = "0"
+                let holdingIndex = try XCTUnwrap(rows.firstIndex { $0["holdingID"] == otherHolding.id.uuidString })
+                rows[holdingIndex]["holdingValue"] = "0"
+                rows[holdingIndex]["quantity"] = ""
+                let emptyIndex = try XCTUnwrap(rows.firstIndex { $0["portfolioID"] == "statement-review" })
+                rows[emptyIndex]["portfolioValue"] = "0"
+            }
+            let configured = try SampleCatalog.load(directory: directory)
+            let account = try XCTUnwrap(configured.accounts.first { $0.id == originalAccount.id })
+            XCTAssertEqual(account.holdings.count, originalAccount.holdings.count)
+            XCTAssertTrue(account.holdings.allSatisfy { $0.quantity == 0 && $0.value == 0 && $0.cost == 0 })
+            let other = try XCTUnwrap(configured.accounts.first { $0.id == otherAccount.id })
+            XCTAssertEqual(other.holdings.first { $0.id == otherHolding.id }?.quantity, 0)
+            XCTAssertTrue(configured.makeAccount(template: "statement-review").holdings.isEmpty)
+        }
+    }
+
+    func testPortfolioTableRejectsInvalidTargetsAndConflictingMetadata() throws {
+        var changes: [(inout [[String: String]]) -> Void] = []
+        for key in ["portfolioValue", "holdingValue"] {
+            for invalid in ["-1", "nan", "inf"] {
+                changes.append { $0[0][key] = invalid }
+            }
+        }
+        changes += [
+            { rows in
+                let index = rows.firstIndex { $0["portfolioID"] == "statement-review" }!
+                rows[index]["portfolioValue"] = "100"
+            },
+            { rows in
+                let portfolioID = rows[0]["portfolioID"]
+                rows[0]["portfolioValue"] = "100"
+                for index in rows.indices where rows[index]["portfolioID"] == portfolioID {
+                    rows[index]["quantity"] = "0"
+                }
+            },
+            { $0[0]["holdingValue"] = "100"; $0[0]["price"] = "0" },
+            { $0[1]["name"] = "Conflicting account name" },
+            { $0[0]["portfolioValue"] = "100"; $0[1]["portfolioValue"] = "200" }
+        ]
+        for change in changes {
+            try withSampleDirectory { directory in
+                try rewriteTable("Portfolios", in: directory, update: change)
+                XCTAssertThrowsError(try SampleCatalog.load(directory: directory)) { error in
+                    XCTAssertTrue(error.localizedDescription.contains("Portfolios.csv"), error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    func testNewPortfolioWithoutUUIDsKeepsGeneratedIdentityAfterBAEdits() throws {
+        try withSampleDirectory { directory in
+            let original = try SampleCatalog.load(directory: directory)
+            try rewriteTable("Portfolios", in: directory) { rows in
+                var accountRow = rows[0]
+                accountRow["portfolioID"] = "ba-created-portfolio"
+                accountRow["accountID"] = ""
+                accountRow["holdingID"] = ""
+                accountRow["name"] = "BA portfolio"
+                accountRow["accountNumber"] = "BA-001"
+                var secondHolding = rows[1]
+                secondHolding["portfolioID"] = "ba-created-portfolio"
+                secondHolding["holdingID"] = ""
+                rows += [accountRow, secondHolding]
+            }
+            let created = try SampleCatalog.load(directory: directory)
+            let account = try XCTUnwrap(created.accounts.first { $0.accountNumber == "BA-001" })
+            XCTAssertEqual(account.holdings.count, 2)
+            XCTAssertEqual(Set(account.holdings.map(\.id)).count, 2)
+            XCTAssertFalse(original.accounts.map(\.id).contains(account.id))
+            XCTAssertEqual(created.accounts.filter { $0.id != account.id }, original.accounts)
+
+            try rewriteTable("Portfolios", in: directory) { rows in
+                for index in rows.indices where rows[index]["portfolioID"] == "ba-created-portfolio" {
+                    if rows[index]["purpose"] == "account" {
+                        rows[index]["name"] = "Renamed BA portfolio"
+                    }
+                    rows[index]["holdingName"] = "Edited display name " + (rows[index]["symbol"] ?? "")
+                    rows[index]["quantity"] = "250"
+                }
+                rows.reverse()
+            }
+            let edited = try SampleCatalog.load(directory: directory)
+            let renamed = try XCTUnwrap(edited.accounts.first { $0.accountNumber == "BA-001" })
+            XCTAssertEqual(renamed.name, "Renamed BA portfolio")
+            XCTAssertEqual(renamed.id, account.id)
+            for holding in renamed.holdings {
+                XCTAssertEqual(holding.id, account.holdings.first { $0.symbol == holding.symbol }?.id)
+                XCTAssertEqual(holding.quantity, 250)
+            }
+
+            try rewriteTable("Portfolios", in: directory) { rows in
+                let duplicated = try XCTUnwrap(rows.first { $0["portfolioID"] == "ba-created-portfolio" })
+                rows.append(duplicated)
+            }
+            XCTAssertThrowsError(try SampleCatalog.load(directory: directory)) { error in
+                XCTAssertTrue(error.localizedDescription.contains("Portfolios.csv"), error.localizedDescription)
+            }
+        }
+    }
+
+    func testRemovingAccountRowsDoesNotRequireEditingOtherConfigurationTables() throws {
+        try withSampleDirectory { directory in
+            let original = try SampleCatalog.load(directory: directory)
+            let first = try XCTUnwrap(original.accounts.first)
+            let defaultID = original.row("settings", id: "defaultAccountID").string("value")
+            for accountID in [first.id.uuidString, defaultID] {
+                try rewriteTable("Portfolios", in: directory) { rows in
+                    let metadata = try XCTUnwrap(rows.first { $0["accountID"] == accountID })
+                    let portfolioID = try XCTUnwrap(metadata["portfolioID"])
+                    rows.removeAll { $0["portfolioID"] == portfolioID }
+                }
+                let configured = try SampleCatalog.load(directory: directory)
+                XCTAssertFalse(configured.accounts.contains { $0.id.uuidString == accountID })
+                XCTAssertFalse(configured.accounts.isEmpty)
+            }
+            let configured = try SampleCatalog.load(directory: directory)
+            XCTAssertEqual(configured.accounts.count, original.accounts.count - 2)
+            XCTAssertEqual(configured.accounts, original.accounts.filter { $0.id != first.id && $0.id.uuidString != defaultID })
+        }
+    }
+
     func testCatalogRejectsBrokenReferencesDuplicateIDsAndInvalidValues() throws {
         let cases: [(table: String, change: (inout [[String: String]]) -> Void)] = [
-            ("accounts", { $0[1]["id"] = $0[0]["id"] }),
-            ("accounts", { $0[0]["holdingsSet"] = "missing-holdings-set" }),
-            ("holdings", { $0[0]["currency"] = "INVALID" }),
-            ("holdings", { $0[0]["quantity"] = "nan" }),
+            ("Portfolios", { rows in
+                let indices = rows.indices.filter { rows[$0]["purpose"] == "account" }
+                rows[indices[1]]["accountID"] = rows[indices[0]]["accountID"]
+            }),
+            ("Portfolios", { rows in
+                let index = rows.firstIndex { $0["portfolioID"] == "linked-account" }!
+                rows[index]["holdingsFrom"] = "missing-portfolio"
+            }),
+            ("Portfolios", { $0[0]["holdingCurrency"] = "INVALID" }),
+            ("Portfolios", { $0[0]["quantity"] = "nan" }),
+            ("Portfolios", { $0[1]["holdingID"] = $0[0]["holdingID"] }),
             ("currencies", { $0[0]["cnyRate"] = "0" }),
             ("currencies", { $0[0]["cnyRate"] = "1e308" }),
             ("performance", { $0[0]["marketFilters"] = $0[0]["marketFilters"]! + "|" + $0[0]["allMarketsLabel"]! }),
             ("assistant_rules", { $0[0]["response"] = "Unknown {unsupportedValue}" }),
-            ("holdings", { rows in
-                for index in rows.indices where rows[index]["setID"] == "csv-import" {
+            ("Portfolios", { rows in
+                for index in rows.indices where rows[index]["portfolioID"] == "csv-import" {
                     rows[index]["quantity"] = "0"
                 }
             })
@@ -320,8 +549,16 @@ final class PortfolioTests: XCTestCase {
         try body(directory)
     }
 
+    private func configuredValue(of account: InvestmentAccount, catalog: SampleCatalog, useCost: Bool = false) -> Double {
+        let accountRate = catalog.row("currencies", id: account.currency.rawValue).double("cnyRate")
+        return account.holdings.reduce(0) { total, holding in
+            let holdingRate = catalog.row("currencies", id: holding.currency.rawValue).double("cnyRate")
+            return total + (useCost ? holding.cost : holding.value) * holdingRate / accountRate
+        }
+    }
+
     private func rewriteTable(_ name: String, in directory: URL, update: (inout [[String: String]]) throws -> Void) throws {
-        let url = directory.appendingPathComponent(name + ".csv")
+        let url = directory.appendingPathComponent(name == "Portfolios" ? "Portfolios.csv" : "Others/" + name + ".csv")
         let text = try String(contentsOf: url, encoding: .utf8)
         let header = try XCTUnwrap(text.split(whereSeparator: \.isNewline).first)
         let columns = header.split(separator: ",").map(String.init)

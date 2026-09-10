@@ -5,9 +5,9 @@ sample_project_root="$(cd "$(dirname "$0")/.." && pwd)"
 sample_command="${1:-validate}"
 
 case "$sample_command" in
-  validate)
+  validate|summary)
     if [ "$#" -gt 1 ]; then
-      echo "Usage: $0 validate" >&2
+      echo "Usage: $0 $sample_command" >&2
       exit 2
     fi
     ;;
@@ -19,12 +19,13 @@ case "$sample_command" in
     ;;
   -h|--help|help)
     echo "Usage: $0 validate"
+    echo "       $0 summary"
     echo "       $0 export-statement [outputPath]"
     echo "Default export: $sample_project_root/build/Sample/statement.csv"
     exit 0
     ;;
   *)
-    echo "Unknown command: $sample_command. Use validate or export-statement." >&2
+    echo "Unknown command: $sample_command. Use validate, summary or export-statement." >&2
     exit 2
     ;;
 esac
@@ -43,5 +44,5 @@ if [ "$sample_command" = "export-statement" ]; then
   sample_output="${2:-$sample_project_root/build/Sample/statement.csv}"
   exec "$sample_tool_directory/sample-data" export-statement "$sample_project_root/Sample" "$sample_output"
 else
-  exec "$sample_tool_directory/sample-data" validate "$sample_project_root/Sample"
+  exec "$sample_tool_directory/sample-data" "$sample_command" "$sample_project_root/Sample"
 fi
