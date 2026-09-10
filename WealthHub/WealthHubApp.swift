@@ -2,7 +2,8 @@ import SwiftUI
 
 @main
 struct WealthHubApp: App {
-    @State private var store: PortfolioStore = {
+    @State private var store: PortfolioStore? = {
+        guard SampleData.configurationError == nil else { return nil }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--uitesting") {
             let defaults = UserDefaults(suiteName: "wealthhub.ui-tests")!
@@ -14,10 +15,19 @@ struct WealthHubApp: App {
     }()
     var body: some Scene {
         WindowGroup {
-            RootView().environment(store).tint(Theme.red).preferredColorScheme(.light)
-                .alert("Local storage", isPresented: Binding(get: { store.storageError != nil }, set: { if !$0 { store.storageError = nil } })) {
-                    Button("OK") { store.storageError = nil }
-                } message: { Text(store.storageError ?? "") }
+            if let store {
+                RootView().environment(store).tint(Theme.red).preferredColorScheme(.light)
+                    .alert("Local storage", isPresented: Binding(get: { store.storageError != nil }, set: { if !$0 { store.storageError = nil } })) {
+                        Button("OK") { store.storageError = nil }
+                    } message: { Text(store.storageError ?? "") }
+            } else {
+                ContentUnavailableView {
+                    Label("Check Sample configuration", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text((SampleData.configurationError ?? "Unable to load sample data.") + "\n\nCorrect the CSV in Sample, rebuild, and reopen the app. Your saved portfolio has been preserved.")
+                }
+                .preferredColorScheme(.light)
+            }
         }
     }
 }

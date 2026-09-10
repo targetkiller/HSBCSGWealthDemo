@@ -1,0 +1,4 @@
+id,name,description,shockRate,referenceDecline
+equities-fall,Scenario 1,Global equities fall by 10%.,0.10,6.0
+bonds-fall,Scenario 2,Bond prices fall by 5%.,0.05,2.0
+usd-fall,Scenario 3,US dollar weakens by 10%.,0.10,5.0

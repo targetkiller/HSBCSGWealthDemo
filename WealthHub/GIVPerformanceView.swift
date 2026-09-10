@@ -4,26 +4,26 @@ import Charts
 struct GIVPerformanceView: View {
     @Environment(PortfolioStore.self) private var store
     let data: GIVPortfolioData
-    @State private var market = "All markets"
-    @State private var period = "month"
-    @State private var metric = "TWRR"
-    @State private var benchmarks: Set<String> = ["S&P 500"]
+    @State private var market = PerformanceSample.settings.string("initialMarket")
+    @State private var period = PerformanceSample.settings.string("initialPeriod")
+    @State private var metric = PerformanceSample.settings.string("initialMetric")
+    @State private var benchmarks = Set(PerformanceSample.benchmarks.filter { $0.bool("defaultSelected") }.map { $0.string("name") })
     @State private var selectedDate: Date?
     @State private var customDates = false
     @State private var metricInfo = false
-    @State private var start = Calendar.current.date(from: DateComponents(year: 2026, month: 8, day: 9))!
-    @State private var end = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 9))!
-    @State private var draftStart = Calendar.current.date(from: DateComponents(year: 2026, month: 8, day: 9))!
-    @State private var draftEnd = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 9))!
+    @State private var start = PerformanceSample.date("initialStartDate")
+    @State private var end = PerformanceSample.date("initialEndDate")
+    @State private var draftStart = PerformanceSample.date("initialStartDate")
+    @State private var draftEnd = PerformanceSample.date("initialEndDate")
 
-    private static let anchor = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 9))!
-    private let benchmarkNames = ["S&P 500", "HSBC reference portfolio", "HSI"]
+    private static let anchor = PerformanceSample.date("asOfDate")
+    private var benchmarkNames: [String] { PerformanceSample.benchmarks.map { $0.string("name") } }
     private var range: ClosedRange<Date> {
         if period == "custom" { return min(start, end)...max(start, end) }
         let first = Calendar.current.date(byAdding: period == "year" ? .year : .month, value: -1, to: Self.anchor) ?? Self.anchor
         return first...Self.anchor
     }
-    private var entries: [GIVEntry] { data.entries.filter { market == "All markets" || $0.region == market } }
+    private var entries: [GIVEntry] { data.entries.filter { market == PerformanceSample.settings.string("allMarketsLabel") || $0.region == market } }
     private var invested: Double { entries.reduce(0) { $0 + $1.cost } }
     private var mySeries: [GIVHistoryPoint] { history(for: "My total return") }
     private var allPoints: [GIVHistoryPoint] { mySeries + benchmarkNames.filter { benchmarks.contains($0) }.flatMap { history(for: $0) } }
@@ -43,7 +43,7 @@ struct GIVPerformanceView: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 7) {
-                    ForEach(["All markets", "Hong Kong", "Mainland China", "Singapore", "United States"], id: \.self) { name in
+                    ForEach(PerformanceSample.settings.list("marketFilters"), id: \.self) { name in
                         Button { market = name; selectedDate = nil } label: {
                             Text(name).font(.system(size: 11)).padding(.horizontal, 12).padding(.vertical, 10)
                                 .foregroundStyle(market == name ? .white : Theme.ink)
@@ -173,7 +173,7 @@ struct GIVPerformanceView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: benchmarks.contains(name) ? "largecircle.fill.circle" : "circle").font(.system(size: 19, weight: .light))
-                        Image(systemName: name == "HSI" ? "diamond.fill" : name == "S&P 500" ? "square.fill" : "triangle.fill").font(.system(size: 8)).foregroundStyle(color(for: name))
+                        Image(systemName: PerformanceSample.benchmark(named: name)?.string("symbol") ?? "circle.fill").font(.system(size: 8)).foregroundStyle(color(for: name))
                         Text(name).font(.system(size: 10)).lineLimit(2)
                     }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                 }.buttonStyle(.plain).accessibilityIdentifier("giv.performance.benchmark.\(name)")
@@ -197,33 +197,60 @@ struct GIVPerformanceView: View {
     }
 
     private func color(for series: String) -> Color {
-        switch series { case "S&P 500": Color(hex: 0xC7355C); case "HSBC reference portfolio": Color(hex: 0x4BAA08); case "HSI": Color(hex: 0xEF7046); default: GIVPortfolioData.colors[0] }
+        guard let benchmark = PerformanceSample.benchmark(named: series),
+              let hex = UInt32(benchmark.string("colorHex"), radix: 16) else { return GIVPortfolioData.colors[0] }
+        return Color(hex: hex)
     }
     private func dateText(_ date: Date) -> String { date.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)) }
 
     // A deterministic scenario series, deliberately separate from the current-value calculation.
     private func history(for series: String) -> [GIVHistoryPoint] {
+        let settings = PerformanceSample.settings
         let days = max(1, range.upperBound.timeIntervalSince(range.lowerBound) / 86_400)
-        let duration = min(3, days / 365)
+        let duration = min(settings.double("maxYears"), days / 365)
         let baseRate = invested > 0 ? entries.reduce(0) { $0 + $1.profit } / invested * 100 : 0
         // Benchmark paths must remain identical when the account or market selection changes.
         let seedSource = series == "My total return"
             ? entries.reduce(0) { $0 + $1.holding.symbol.unicodeScalars.reduce(0) { $0 + Int($1.value) } }
             : series.unicodeScalars.reduce(0) { $0 + Int($1.value) }
-        let seed = Double(seedSource % 97) / 97
+        let seedModulus = settings.int("seedModulus")
+        let seed = Double(seedSource % seedModulus) / Double(seedModulus)
         let target: Double
-        switch series {
-        case "S&P 500": target = 8.7 * duration + 0.9 * sqrt(duration)
-        case "HSBC reference portfolio": target = 5.3 * duration + 0.5 * sqrt(duration)
-        case "HSI": target = 6.1 * duration - 0.7 * sqrt(duration)
-        default: target = baseRate * min(1, 0.25 + duration * 0.75)
+        let amplitude: Double
+        if let benchmark = PerformanceSample.benchmark(named: series) {
+            target = benchmark.double("annualReturnPercent") * duration + benchmark.double("sqrtReturnPercent") * sqrt(duration)
+            amplitude = benchmark.double("amplitude")
+        } else {
+            target = baseRate * min(1, settings.double("portfolioBaseWeight") + duration * settings.double("portfolioAnnualWeight"))
+            amplitude = settings.double("portfolioAmplitude")
         }
-        return (0...60).map { index in
-            let x = Double(index) / 60
-            let amplitude = series == "My total return" ? 2.6 : 0.8
-            let wave = (sin(x * 19 + seed * 8) + sin(x * 61 + seed * 13) * 0.34) * sin(x * .pi) * amplitude * sqrt(max(0.08, duration))
+        let intervals = settings.int("sampleIntervals")
+        return (0...intervals).map { index in
+            let x = Double(index) / Double(intervals)
+            let primary = sin(x * settings.double("primaryFrequency") + seed * settings.double("primarySeedMultiplier"))
+            let secondary = sin(x * settings.double("secondaryFrequency") + seed * settings.double("secondarySeedMultiplier"))
+            let wave = (primary + secondary * settings.double("secondaryWeight")) * sin(x * .pi) * amplitude * sqrt(max(settings.double("minDuration"), duration))
             return GIVHistoryPoint(series: series, index: index, date: range.lowerBound.addingTimeInterval(range.upperBound.timeIntervalSince(range.lowerBound) * x), value: target * x + wave)
         }
+    }
+}
+
+private enum PerformanceSample {
+    static let settings = SampleData.row("performance", id: "default")
+    static let benchmarks = SampleData.rows("benchmarks")
+
+    static func benchmark(named name: String) -> SampleRecord? { benchmarks.first { $0.string("name") == name } }
+
+    static func date(_ field: String) -> Date {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.isLenient = false
+        guard let date = formatter.date(from: settings.string(field)) else {
+            preconditionFailure("Sample/performance.csv contains an invalid \(field) date")
+        }
+        return date
     }
 }
 

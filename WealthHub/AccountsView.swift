@@ -1,13 +1,34 @@
 import SwiftUI
 
+private struct AccountMarketOption: Identifiable {
+    let id: String
+    let name: String
+    let shortName: String
+}
+
+private func accountMarketOptions(in accounts: [InvestmentAccount]) -> [AccountMarketOption] {
+    var options = SampleData.rows("markets").map {
+        AccountMarketOption(id: $0.id, name: $0.string("name"), shortName: $0.string("shortName"))
+    }
+    var names = Set(options.map(\.name))
+    for account in accounts where names.insert(account.market).inserted {
+        options.append(AccountMarketOption(id: "saved:\(account.market)", name: account.market, shortName: account.market))
+    }
+    return options
+}
+
 struct AccountSelector: View {
     @Environment(PortfolioStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Binding var selectedIDs: Set<UUID>
     @State private var draft = Set<UUID>()
-    @State private var market = "Singapore"
+    @State private var marketID = SampleData.setting("defaultMarketID")
+    private var markets: [AccountMarketOption] { accountMarketOptions(in: store.accounts) }
+    private var market: AccountMarketOption {
+        markets.first { $0.id == marketID } ?? markets.first { $0.id == SampleData.setting("defaultMarketID") }!
+    }
     private var allIDs: Set<UUID> { Set(store.accounts.map(\.id)) }
-    private var localAccounts: [InvestmentAccount] { store.accounts.filter { $0.market == market } }
+    private var localAccounts: [InvestmentAccount] { store.accounts.filter { $0.market == market.name } }
     private var localIDs: Set<UUID> { Set(localAccounts.map(\.id)) }
     private var allGlobalSelected: Bool { !allIDs.isEmpty && draft == allIDs }
     private var allLocalSelected: Bool { !localIDs.isEmpty && localIDs.isSubset(of: draft) }
@@ -35,29 +56,31 @@ struct AccountSelector: View {
                     .accessibilityIdentifier("accountSelector.global")
                     .padding(.bottom, 12)
 
-                    HStack(spacing: 12) {
-                        ForEach(["Singapore", "Hong Kong"], id: \.self) { item in
-                            Button { market = item } label: {
-                                Text(item)
-                                    .font(.system(size: 14, weight: .medium))
-                                    .padding(.horizontal, 16)
-                                    .frame(minWidth: 60, minHeight: 34)
-                                    .foregroundStyle(market == item ? .white : Theme.ink)
-                                    .background(market == item ? Theme.ink : .white, in: Capsule())
-                                    .overlay(Capsule().stroke(market == item ? .clear : Theme.line))
-                                    .contentShape(Capsule())
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(markets) { item in
+                                Button { marketID = item.id } label: {
+                                    Text(item.name)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .padding(.horizontal, 16)
+                                        .frame(minWidth: 60, minHeight: 34)
+                                        .foregroundStyle(marketID == item.id ? .white : Theme.ink)
+                                        .background(marketID == item.id ? Theme.ink : .white, in: Capsule())
+                                        .overlay(Capsule().stroke(marketID == item.id ? .clear : Theme.line))
+                                        .contentShape(Capsule())
+                                }
+                                .buttonStyle(.plain).accessibilityLabel(item.name)
+                                .accessibilityAddTraits(marketID == item.id ? .isSelected : [])
+                                .accessibilityIdentifier("accountSelector.market.\(item.shortName.lowercased())")
                             }
-                            .buttonStyle(.plain).accessibilityLabel(item)
-                            .accessibilityAddTraits(market == item ? .isSelected : [])
-                            .accessibilityIdentifier("accountSelector.market.\(item == "Singapore" ? "sg" : "hk")")
                         }
                     }.padding(.bottom, 12)
 
-                    selectionRow("All Accounts in \(market == "Singapore" ? "SG" : "HK")", selected: allLocalSelected) {
+                    selectionRow("All Accounts in \(market.shortName)", selected: allLocalSelected) {
                         if allLocalSelected { draft.subtract(localIDs) }
                         else { draft.formUnion(localIDs) }
                     }
-                    .accessibilityIdentifier("accountSelector.marketAll.\(market == "Singapore" ? "sg" : "hk")")
+                    .accessibilityIdentifier("accountSelector.marketAll.\(market.shortName.lowercased())")
 
                     ForEach(localAccounts) { account in
                         Button {
@@ -102,7 +125,11 @@ struct AccountSelector: View {
         .onAppear {
             draft = selectedIDs.isEmpty ? allIDs : selectedIDs.intersection(allIDs)
             let selectedAccounts = store.accounts.filter { draft.contains($0.id) }
-            if !selectedAccounts.isEmpty && selectedAccounts.allSatisfy({ $0.market == "Hong Kong" }) { market = "Hong Kong" }
+            if let selectedMarket = selectedAccounts.first?.market,
+               selectedAccounts.allSatisfy({ $0.market == selectedMarket }),
+               let option = markets.first(where: { $0.name == selectedMarket }) {
+                marketID = option.id
+            }
         }
     }
 
@@ -129,7 +156,8 @@ struct AccountSelector: View {
 struct AccountsView: View {
     @Environment(PortfolioStore.self) private var store
     @State private var search = ""
-    @State private var market = "All"
+    @State private var marketID: String?
+    private var markets: [AccountMarketOption] { accountMarketOptions(in: store.accounts) }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -137,7 +165,12 @@ struct AccountsView: View {
                     Text("All your wealth. One place.").font(.system(size: 25, weight: .medium))
                     Text("Manage your accounts across banks and markets.").font(.system(size: 14)).foregroundStyle(Theme.muted)
                 }.padding(.top, 10)
-                HStack { ForEach(["All", "Singapore", "Hong Kong"], id: \.self) { item in Pill(title: item, selected: market == item) { market = item } } }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack {
+                        Pill(title: "All", selected: marketID == nil) { marketID = nil }
+                        ForEach(markets) { item in Pill(title: item.name, selected: marketID == item.id) { marketID = item.id } }
+                    }
+                }
                 ForEach(filtered) { account in
                     NavigationLink { AccountDetailView(accountID: account.id) } label: {
                         VStack(alignment: .leading, spacing: 18) {
@@ -155,7 +188,10 @@ struct AccountsView: View {
             }.padding(20)
         }.background(Theme.background.opacity(0.55)).navigationTitle("Your accounts").navigationBarTitleDisplayMode(.inline).searchable(text: $search, prompt: "Search accounts or banks")
     }
-    private var filtered: [InvestmentAccount] { store.accounts.filter { (market == "All" || $0.market == market) && (search.isEmpty || ($0.name + $0.institution).localizedCaseInsensitiveContains(search)) } }
+    private var filtered: [InvestmentAccount] {
+        let selectedMarket = markets.first { $0.id == marketID }?.name
+        return store.accounts.filter { (selectedMarket == nil || $0.market == selectedMarket) && (search.isEmpty || ($0.name + $0.institution).localizedCaseInsensitiveContains(search)) }
+    }
 }
 
 struct AccountDetailView: View {
@@ -203,7 +239,14 @@ struct AccountEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Account details") { TextField("Account name", text: $account.name); TextField("Bank / institution", text: $account.institution); Picker("Market", selection: $account.market) { Text("Singapore").tag("Singapore"); Text("Hong Kong").tag("Hong Kong") }; Picker("Account currency", selection: $account.currency) { ForEach(Currency.allCases) { Text($0.rawValue).tag($0) } } }
+                Section("Account details") {
+                    TextField("Account name", text: $account.name)
+                    TextField("Bank / institution", text: $account.institution)
+                    Picker("Market", selection: $account.market) {
+                        ForEach(accountMarketOptions(in: store.accounts + [account])) { item in Text(item.name).tag(item.name) }
+                    }
+                    Picker("Account currency", selection: $account.currency) { ForEach(Currency.allCases) { Text($0.rawValue).tag($0) } }
+                }
                 Section("Notes") { TextField("Optional note", text: $account.note, axis: .vertical).lineLimit(3...5) }
             }.navigationTitle("Edit account").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }; ToolbarItem(placement: .confirmationAction) { Button("Save") { account.name = account.name.trimmingCharacters(in: .whitespacesAndNewlines); store.save(account); dismiss() }.disabled(account.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || account.institution.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) } }
         }

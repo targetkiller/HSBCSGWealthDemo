@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CA5A01000000000000000002 /* SampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA5A01000000000000000001 /* SampleData.swift */; };
+		CA5A01000000000000000004 /* Sample in Resources */ = {isa = PBXBuildFile; fileRef = CA5A01000000000000000003 /* Sample */; };
 		C12A3268FE0C4D9090FA21A2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = C12A3268FE0C4D9090FA21A1 /* PrivacyInfo.xcprivacy */; };
 		049CF9F4404F914EC6B78184 /* GIVAnalysisView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F32DC31B9CDE9874ABBDD4F /* GIVAnalysisView.swift */; };
 		14C8693E8EFD55E2F512C4E5 /* PortfolioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECCE9B13076F1F64E30A3848 /* PortfolioTests.swift */; };
@@ -48,6 +50,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		CA5A01000000000000000001 /* SampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleData.swift; sourceTree = "<group>"; };
+		CA5A01000000000000000003 /* Sample */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Sample; sourceTree = "<group>"; };
 		C12A3268FE0C4D9090FA21A1 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		126635CD7525227CBACB7EC6 /* AccountsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsView.swift; sourceTree = "<group>"; };
 		2AC5CF41E5D1009920BA02AA /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -86,6 +90,7 @@
 		68088A97264287F1380A217A = {
 			isa = PBXGroup;
 			children = (
+				CA5A01000000000000000003 /* Sample */,
 				B0710F58C48F7125088BD124 /* WealthHub */,
 				6504D44787DDD67099B16CAC /* WealthHubTests */,
 				D8F8326060449D335106F1B2 /* WealthHubUITests */,
@@ -108,6 +113,7 @@
 				979E0E1D7748BDE1384898FC /* GIVPortfolioData.swift */,
 				E586FBEFA374BC89266E5303 /* InvestmentViews.swift */,
 				6021AE2647F3AF847BA2D7B1 /* Models.swift */,
+				CA5A01000000000000000001 /* SampleData.swift */,
 				71BDDAB7E8C7DB8A517A0F25 /* PortfolioStore.swift */,
 				4DCDAA0ABB65FB35643E11C6 /* StatementExtractionService.swift */,
 				AAAB85F7DA9F98843FDA8DA6 /* StatementParser.swift */,
@@ -234,6 +240,7 @@
 			files = (
 				159E925E0F8BDB8E75C8916C /* Assets.xcassets in Resources */,
 				C12A3268FE0C4D9090FA21A2 /* PrivacyInfo.xcprivacy in Resources */,
+				CA5A01000000000000000004 /* Sample in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -270,6 +277,7 @@
 				3586612C02B804BC8EE32026 /* GIVPortfolioData.swift in Sources */,
 				D055A5D3E6A1684528E2E46A /* InvestmentViews.swift in Sources */,
 				81D28ED4520A1B2892424242 /* Models.swift in Sources */,
+				CA5A01000000000000000002 /* SampleData.swift in Sources */,
 				BB4CFAB213E6149A86B10FBE /* PortfolioStore.swift in Sources */,
 				EAB85FC3A5ABB7680C76E93C /* StatementExtractionService.swift in Sources */,
 				DB2BCE27C764B226602BEBE3 /* StatementParser.swift in Sources */,

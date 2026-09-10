@@ -44,6 +44,9 @@ final class PortfolioTests: XCTestCase {
 
     func testStatementImportRejectsInvalidRowsAtomically() throws {
         XCTAssertEqual(try StatementParser.parse(StatementParser.template).count, 2)
+        let catalog = try SampleCatalog.load(directory: SampleData.directory)
+        let exported = try StatementParser.parse(catalog.statementCSV(in: "csv-file-export"))
+        XCTAssertEqual(exported.map(\.symbol), ["AAPL", "VOO", "SGS", "SGD"])
         let header = "name,symbol,category,currency,quantity,price,averageCost\n"
         XCTAssertThrowsError(try StatementParser.parse(header + "Bad,X,Stocks,USD,-1,2,1"))
         XCTAssertThrowsError(try StatementParser.parse(header + "Bad,X,Stocks,USD,1,nan,1"))
@@ -52,7 +55,7 @@ final class PortfolioTests: XCTestCase {
     }
 
     func testDefaultAccountsCoverBothMarketsAndAllAssetClasses() {
-        let accounts = DemoData.accounts
+        let accounts = SampleData.accounts
         XCTAssertEqual(accounts.count, 8)
         XCTAssertEqual(accounts.filter { $0.market == "Singapore" }.count, 4)
         XCTAssertEqual(accounts.filter { $0.market == "Hong Kong" }.count, 4)
@@ -126,7 +129,7 @@ final class PortfolioTests: XCTestCase {
         XCTAssertEqual(migrated.accounts.first { $0.id == legacy[2].id }?.name, "DBS Account")
         XCTAssertEqual(equity.accountNumber, "068-981234-001")
 
-        let seedToRemove = DemoData.accounts[0].id
+        let seedToRemove = SampleData.accounts[0].id
         migrated.deleteAccount(id: seedToRemove)
         let reopened = PortfolioStore(defaults: defaults)
         XCTAssertEqual(reopened.accounts.count, 8)
@@ -159,6 +162,178 @@ final class PortfolioTests: XCTestCase {
         XCTAssertEqual(PortfolioStore(defaults: defaults).accounts, [account])
     }
 
+    func testSampleCSVSupportsSpreadsheetQuotingAndLineEndings() throws {
+        let csv = "\u{FEFF}id,name,note,tags\r\nfirst,\"Global, income\",\"A \"\"quoted\"\" note\r\ncontinued\", USD | HKD \r\nsecond,Cash,,\r\n"
+        let rows = try SampleCSV.parse(csv, source: "quoted.csv")
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows[0].id, "first")
+        XCTAssertEqual(rows[0].lineNumber, 2)
+        XCTAssertEqual(rows[0].string("name"), "Global, income")
+        XCTAssertEqual(rows[0].string("note").replacingOccurrences(of: "\r\n", with: "\n"), "A \"quoted\" note\ncontinued")
+        XCTAssertEqual(rows[0].list("tags"), ["USD", "HKD"])
+        XCTAssertEqual(rows[1].string("note"), "")
+        XCTAssertTrue(rows[1].list("tags").isEmpty)
+    }
+
+    func testSampleCSVRejectsMalformedSpreadsheetRows() {
+        let invalidCSVs = [
+            "id,name,name\nfirst,A,B\n",
+            "id,,name\nfirst,A,B\n",
+            "id,name\nfirst\n",
+            "id,name\nfirst,A,extra\n",
+            "id,name\nfirst,\"unfinished\n",
+            "id,name\nfirst,\"A\"unexpected\n"
+        ]
+        for csv in invalidCSVs {
+            XCTAssertThrowsError(try SampleCSV.parse(csv, source: "broken.csv")) { error in
+                XCTAssertTrue(error.localizedDescription.contains("broken.csv"), error.localizedDescription)
+            }
+        }
+    }
+
+    func testSampleCatalogKeepsSeedIdentifiersStableAndClonesTemplateIdentifiers() throws {
+        let first = try SampleCatalog.load(directory: SampleData.directory)
+        let second = try SampleCatalog.load(directory: SampleData.directory)
+        XCTAssertEqual(first.accounts, second.accounts)
+        let seedHoldingIDs = Set(first.accounts.flatMap(\.holdings).map(\.id))
+        XCTAssertEqual(seedHoldingIDs.count, first.accounts.flatMap(\.holdings).count)
+
+        let accountA = first.makeAccount(template: "linked-account")
+        let accountB = first.makeAccount(template: "linked-account")
+        XCTAssertFalse(accountA.holdings.isEmpty)
+        XCTAssertNotEqual(accountA.id, accountB.id)
+        XCTAssertEqual(accountA.holdings.map(\.symbol), accountB.holdings.map(\.symbol))
+        XCTAssertTrue(Set(accountA.holdings.map(\.id)).isDisjoint(with: accountB.holdings.map(\.id)))
+        XCTAssertTrue(seedHoldingIDs.isDisjoint(with: accountA.holdings.map(\.id)))
+        XCTAssertEqual(Set(accountA.holdings.map(\.id)).count, accountA.holdings.count)
+    }
+
+    func testEditingCSVChangesAccountAndHoldingWithoutChangingSwift() throws {
+        try withSampleDirectory { directory in
+            let original = try SampleCatalog.load(directory: directory)
+            let originalAccount = try XCTUnwrap(original.accounts.first)
+            let originalHolding = try XCTUnwrap(originalAccount.holdings.first)
+            let configuredQuantity = originalHolding.quantity + 123
+            try rewriteTable("accounts", in: directory) { rows in
+                let index = try XCTUnwrap(rows.firstIndex { $0["id"] == originalAccount.id.uuidString })
+                rows[index]["name"] = "My configurable, \"portfolio\""
+            }
+            try rewriteTable("holdings", in: directory) { rows in
+                let index = try XCTUnwrap(rows.firstIndex { $0["id"] == originalHolding.id.uuidString })
+                rows[index]["quantity"] = String(configuredQuantity)
+            }
+            let configured = try SampleCatalog.load(directory: directory)
+            let account = try XCTUnwrap(configured.accounts.first { $0.id == originalAccount.id })
+            let holding = try XCTUnwrap(account.holdings.first { $0.id == originalHolding.id })
+            XCTAssertEqual(account.name, "My configurable, \"portfolio\"")
+            XCTAssertEqual(holding.quantity, configuredQuantity)
+            XCTAssertEqual(holding.value, configuredQuantity * originalHolding.price, accuracy: 0.001)
+        }
+    }
+
+    func testReorderingAccountsKeepsNamedTemplateHoldings() throws {
+        try withSampleDirectory { directory in
+            let original = try SampleCatalog.load(directory: directory)
+            let template = original.makeAccount(template: "linked-account")
+            try rewriteTable("accounts", in: directory) { $0.reverse() }
+            let reordered = try SampleCatalog.load(directory: directory)
+            XCTAssertEqual(reordered.accounts.map(\.id), original.accounts.reversed().map(\.id))
+            let linkedAccount = reordered.makeAccount(template: "linked-account")
+            XCTAssertEqual(linkedAccount.holdings.map(\.symbol), template.holdings.map(\.symbol))
+            XCTAssertEqual(linkedAccount.holdings.map(\.quantity), template.holdings.map(\.quantity))
+        }
+    }
+
+    func testDefaultAccountSelectionRecognizesMigratedIdentityBeforeFallingBack() throws {
+        let configuredID = SampleData.setting("defaultAccountID")
+        let configured = try XCTUnwrap(SampleData.accounts.first { $0.id.uuidString == configuredID })
+        let firstCurrentAccount = try XCTUnwrap(SampleData.accounts.first { $0.id != configured.id })
+        XCTAssertNotNil(configured.accountNumber)
+        var migrated = configured
+        migrated.id = UUID()
+        migrated.name = "My renamed investment portfolio"
+
+        XCTAssertEqual(SampleData.defaultAccount(in: [firstCurrentAccount, migrated])?.id, migrated.id,
+                       "A migrated account keeps its saved UUID and edited name; its account number should still select the configured default.")
+        XCTAssertEqual(SampleData.defaultAccount(in: [migrated, firstCurrentAccount, configured])?.id, configured.id,
+                       "An exact configured ID must take priority over a matching migrated account.")
+        XCTAssertNil(SampleData.defaultAccount(in: []))
+        XCTAssertEqual(SampleData.defaultAccount(in: [firstCurrentAccount])?.id, firstCurrentAccount.id)
+    }
+
+    func testCatalogRejectsBrokenReferencesDuplicateIDsAndInvalidValues() throws {
+        let cases: [(table: String, change: (inout [[String: String]]) -> Void)] = [
+            ("accounts", { $0[1]["id"] = $0[0]["id"] }),
+            ("accounts", { $0[0]["holdingsSet"] = "missing-holdings-set" }),
+            ("holdings", { $0[0]["currency"] = "INVALID" }),
+            ("holdings", { $0[0]["quantity"] = "nan" }),
+            ("currencies", { $0[0]["cnyRate"] = "0" }),
+            ("currencies", { $0[0]["cnyRate"] = "1e308" }),
+            ("performance", { $0[0]["marketFilters"] = $0[0]["marketFilters"]! + "|" + $0[0]["allMarketsLabel"]! }),
+            ("assistant_rules", { $0[0]["response"] = "Unknown {unsupportedValue}" }),
+            ("holdings", { rows in
+                for index in rows.indices where rows[index]["setID"] == "csv-import" {
+                    rows[index]["quantity"] = "0"
+                }
+            })
+        ]
+        for testCase in cases {
+            try withSampleDirectory { directory in
+                try rewriteTable(testCase.table, in: directory, update: testCase.change)
+                XCTAssertThrowsError(try SampleCatalog.load(directory: directory)) { error in
+                    XCTAssertTrue(error.localizedDescription.contains(testCase.table + ".csv"), error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    func testConfiguredDefaultsDoNotReplaceSavedEditsUntilReset() throws {
+        let suiteName = "wealthhub.sample-tests." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = PortfolioStore(defaults: defaults)
+        var edited = try XCTUnwrap(store.accounts.first)
+        edited.name = "My saved portfolio"
+        edited.holdings.removeAll()
+        store.save(edited)
+        for account in store.accounts where account.id != edited.id {
+            store.deleteAccount(id: account.id)
+        }
+        store.currency = .USD
+        store.hideAmounts = true
+
+        let reopened = PortfolioStore(defaults: defaults)
+        XCTAssertEqual(reopened.accounts, [edited])
+        XCTAssertEqual(reopened.currency, .USD)
+        XCTAssertTrue(reopened.hideAmounts)
+        reopened.reset()
+        XCTAssertEqual(reopened.accounts, SampleData.accounts)
+        XCTAssertEqual(reopened.currency.rawValue, SampleData.setting("defaultCurrency"))
+        XCTAssertFalse(reopened.hideAmounts)
+        XCTAssertEqual(PortfolioStore(defaults: defaults).accounts, SampleData.accounts)
+    }
+
+    private func withSampleDirectory(_ body: (URL) throws -> Void) throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("wealthhub-sample-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.copyItem(at: SampleData.directory, to: directory)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try body(directory)
+    }
+
+    private func rewriteTable(_ name: String, in directory: URL, update: (inout [[String: String]]) throws -> Void) throws {
+        let url = directory.appendingPathComponent(name + ".csv")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        let header = try XCTUnwrap(text.split(whereSeparator: \.isNewline).first)
+        let columns = header.split(separator: ",").map(String.init)
+        var rows = try SampleCSV.parse(text, source: name + ".csv").map(\.values)
+        try update(&rows)
+        func quote(_ value: String) -> String {
+            "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        }
+        let result = [String(header)] + rows.map { row in columns.map { quote(row[$0] ?? "") }.joined(separator: ",") }
+        try (result.joined(separator: "\n") + "\n").write(to: url, atomically: true, encoding: .utf8)
+    }
+
     private func legacyAccounts() -> [InvestmentAccount] {
         let definitions: [(index: Int, name: String, symbols: Set<String>)] = [
             (1, "Equity Investment Account", ["NVDA", "AAPL", "VOO", "USD"]),
@@ -166,7 +341,7 @@ final class PortfolioTests: XCTestCase {
             (3, "Wealth Portfolio", ["SGS", "GIF", "SGD"])
         ]
         return definitions.map { definition in
-            var account = DemoData.accounts[definition.index]
+            var account = SampleData.accounts[definition.index]
             account.id = UUID()
             account.name = definition.name
             account.accountNumber = nil

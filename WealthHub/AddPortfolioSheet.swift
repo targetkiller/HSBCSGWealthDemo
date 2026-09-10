@@ -132,11 +132,10 @@ struct AddPortfolioSheet: View {
             }
         case .extracted:
             ExtractedPortfolioReview(holdings: $extractedHoldings, source: statementSource, onCancel: { dismiss() }) {
-                let account = InvestmentAccount(
-                    name: "Statement portfolio", institution: "Statement", currency: .HKD,
-                    colorIndex: store.accounts.count, note: "Imported from \(statementSource)",
-                    market: "Hong Kong", holdings: extractedHoldings
-                )
+                var account = SampleData.makeAccount(template: "statement-review")
+                account.colorIndex = store.accounts.count
+                account.note = account.note.replacingOccurrences(of: "{source}", with: statementSource)
+                account.holdings = extractedHoldings
                 finish(account: account)
             }
         }
@@ -233,9 +232,12 @@ private struct GlobalHSBCSelection: View {
 
 private struct OtherBankPortfolioConnection: View {
     var onComplete: (InvestmentAccount) -> Void
-    @State private var bank = "DBS"
+    @State private var bankID = SampleData.setting("defaultBankID")
     @State private var consent = false
     @State private var account: InvestmentAccount?
+
+    private var bank: String { SampleData.row("banks", id: bankID).string("name") }
+    private var banks: [SampleRecord] { SampleData.rows("banks").filter { $0.bool("portfolioEnabled") } }
 
     var body: some View {
         ScrollView {
@@ -256,7 +258,7 @@ private struct OtherBankPortfolioConnection: View {
                         BankMark(bank: bank)
                         VStack(alignment: .leading, spacing: 5) {
                             Text(account.name).font(.system(size: 16, weight: .medium))
-                            Text("Singapore · \(account.holdings.count) holdings").font(.system(size: 13)).foregroundStyle(Theme.muted)
+                            Text("\(account.market) · \(account.holdings.count) holdings").font(.system(size: 13)).foregroundStyle(Theme.muted)
                         }
                     }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(Theme.background)
                 } else {
@@ -265,22 +267,22 @@ private struct OtherBankPortfolioConnection: View {
                     Text("Bring your portfolios together with a sample SGFinDex-style connection.")
                         .font(.system(size: 15)).foregroundStyle(Theme.muted).lineSpacing(4)
                     Text("Choose a bank").font(.system(size: 17, weight: .medium))
-                    ForEach(["DBS", "OCBC", "UOB"], id: \.self) { option in
+                    ForEach(banks, id: \.id) { option in
                         Button {
-                            bank = option
+                            bankID = option.id
                             consent = false
                         } label: {
                             HStack(spacing: 16) {
-                                BankMark(bank: option)
-                                Text(option).font(.system(size: 17))
+                                BankMark(bank: option.string("name"))
+                                Text(option.string("name")).font(.system(size: 17))
                                 Spacer()
-                                Image(systemName: bank == option ? "largecircle.fill.circle" : "circle")
+                                Image(systemName: bankID == option.id ? "largecircle.fill.circle" : "circle")
                                     .font(.system(size: 23, weight: .light))
-                                    .foregroundStyle(bank == option ? Theme.red : Theme.muted)
+                                    .foregroundStyle(bankID == option.id ? Theme.red : Theme.muted)
                             }.padding(18).background(Theme.background).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityIdentifier("portfolio.bank.\(option)")
+                        .accessibilityIdentifier("portfolio.bank.\(option.string("name"))")
                     }
                     Toggle(isOn: $consent) {
                         Text("I agree to include the selected bank’s demo account in my portfolio.")
@@ -306,15 +308,10 @@ private struct OtherBankPortfolioConnection: View {
     }
 
     private func sampleAccount() -> InvestmentAccount {
-        InvestmentAccount(
-            name: "\(bank) demo portfolio", institution: bank, currency: .SGD, colorIndex: 2,
-            note: "Local sample account from the demo bank connection.", market: "Singapore",
-            holdings: [
-                .init(name: "Singapore equity fund", symbol: "SG-EQUITY", category: .fund, currency: .SGD, quantity: 2000, price: 2.15, averageCost: 1.95),
-                .init(name: "Singapore Government Bond", symbol: "SGS", category: .bond, currency: .SGD, quantity: 15000, price: 1.03, averageCost: 1),
-                .init(name: "Singapore dollar balance", symbol: "SGD", category: .cash, currency: .SGD, quantity: 8500, price: 1, averageCost: 1)
-            ]
-        )
+        var account = SampleData.makeAccount(template: "bank-connection")
+        account.institution = bank
+        account.name = account.name.replacingOccurrences(of: "{bank}", with: bank)
+        return account
     }
 }
 
@@ -358,7 +355,7 @@ private struct PortfolioStatementUpload: View {
                     .accessibilityIdentifier("portfolio.statement.camera")
                 Button("Try a sample statement") {
                     error = nil
-                    onExtracted(StatementExtractionService.sampleHoldings, "sample statement")
+                    onExtracted(StatementExtractionService.sampleHoldings, SampleData.setting("statementPreviewSource"))
                 }
                 .font(.system(size: 13)).foregroundStyle(Theme.muted)
                 .padding(.vertical, 3)
@@ -395,7 +392,7 @@ private struct PortfolioStatementUpload: View {
         }
         .confirmationDialog("Camera unavailable", isPresented: $cameraFallbackPresented, titleVisibility: .visible) {
             Button("Choose a saved photo") { imageSource = .library }
-            Button("Try a sample statement") { onExtracted(StatementExtractionService.sampleHoldings, "sample statement") }
+            Button("Try a sample statement") { onExtracted(StatementExtractionService.sampleHoldings, SampleData.setting("statementPreviewSource")) }
             Button("Cancel", role: .cancel) { }
         } message: { Text(cameraUnavailableMessage) }
         .onDisappear { extractionTask?.cancel() }
@@ -471,7 +468,7 @@ private struct ExtractedPortfolioReview: View {
             VStack(alignment: .leading, spacing: 16) {
                 Text("I’ve found \(holdings.count) holdings in this statement:")
                     .font(.system(size: 14)).lineSpacing(3).padding(.top, 16)
-                Text(source == "sample statement" ? "Sample statement · Review the details before proceeding." : "Check the extracted quantities, currencies, prices and average costs before proceeding. Missing values are shown as 0.")
+                Text(source == SampleData.setting("statementPreviewSource") ? "Sample statement · Review the details before proceeding." : "Check the extracted quantities, currencies, prices and average costs before proceeding. Missing values are shown as 0.")
                     .font(.system(size: 13)).foregroundStyle(Theme.muted).lineSpacing(3)
                 if !allValid {
                     Label("Add missing prices and average costs, and check the highlighted holdings before proceeding.", systemImage: "exclamationmark.circle")

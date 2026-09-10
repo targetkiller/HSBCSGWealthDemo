@@ -1,0 +1,8 @@
+id,riskScore,liquidityScore,riskLabel,defaultSector
+Stocks,7,7,Higher risk,Diversified
+Unit trusts,5,7,Higher risk,Diversified
+Bonds,3,4,Moderate,Fixed income
+Cash and FX,1,9,Low risk,Cash and FX
+Structured products,6,7,Higher risk,Diversified
+Insurance,3,7,Higher risk,Diversified
+Options,9,7,Higher risk,Diversified

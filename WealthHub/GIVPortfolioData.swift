@@ -16,7 +16,7 @@ struct GIVEntry: Identifiable {
     var cost: Double { holding.currency.convert(holding.cost, to: currency) }
     var profit: Double { value - cost }
     var region: String { holding.region ?? account.market }
-    var sector: String { holding.sector ?? (holding.category == .cash ? "Cash and FX" : holding.category == .bond ? "Fixed income" : "Diversified") }
+    var sector: String { holding.sector ?? SampleData.row("asset_profiles", id: holding.category.rawValue).string("defaultSector") }
 }
 
 struct GIVPortfolioData {

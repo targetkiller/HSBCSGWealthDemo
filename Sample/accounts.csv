@@ -1,0 +1,9 @@
+id,name,institution,currency,colorIndex,note,market,accountNumber,holdingsSet
+10000000-0000-4000-8000-000000000001,HSBC Current Account,HSBC,SGD,0,Everyday banking and multi-currency balances,Singapore,001-223344-001,hsbc-sg-current
+10000000-0000-4000-8000-000000000002,(068) Equity Investment Account,HSBC,USD,1,Global equities and exchange-traded funds,Singapore,068-981234-001,hsbc-sg-equity
+10000000-0000-4000-8000-000000000003,(085) Unit Trust Investment Account,HSBC,SGD,2,Diversified funds across regions and investment styles,Singapore,085-981234-001,hsbc-sg-unit-trust
+10000000-0000-4000-8000-000000000004,DBS Account,DBS,SGD,3,"Income, protection and capital preservation",Singapore,029-001234-5,dbs-sg
+10000000-0000-4000-8000-000000000005,HSBC Current Account,HSBC,HKD,0,Hong Kong everyday banking and foreign-currency balances,Hong Kong,004-987654-001,hsbc-hk-current
+10000000-0000-4000-8000-000000000006,HSBC One Investment Services,HSBC,HKD,1,"Hong Kong equities, global trading and listed options",Hong Kong,004-987654-068,hsbc-hk-investment
+10000000-0000-4000-8000-000000000007,HSBC One FundMax Account,HSBC,HKD,2,Fund portfolio with regional and thematic exposure,Hong Kong,004-987654-085,hsbc-hk-fundmax
+10000000-0000-4000-8000-000000000008,Standard Chartered Account,Standard Chartered,HKD,4,"International wealth, bonds and structured investments",Hong Kong,447-123456-8,standard-chartered-hk

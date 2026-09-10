@@ -1,0 +1,13 @@
+id,category,title,symbol
+open-investment-account,Products,Open investment\naccount,wallet.bifold
+stocks,Products,Stocks,chart.xyaxis.line
+unit-trusts,Products,Unit Trusts,square.stack.3d.up
+equity-markets,Products,Equity markets,globe
+foreign-exchange,Products,Foreign\nexchange,dollarsign.arrow.circlepath
+insurance,Products,Insurance,umbrella
+structured-products,Products,Structured\nproducts,square.stack.3d.down.right
+bonds,Products,Bonds,doc.text
+time-deposit,Products,Time deposit,clock.arrow.circlepath
+portfolio-review,Services,Portfolio review,chart.pie
+documents,Services,Documents,doc.text
+contact-us,Services,Contact us,bubble.left.and.bubble.right

@@ -29,8 +29,8 @@ final class PortfolioStore {
                 persist()
             }
         } else {
-            accounts = DemoData.accounts
-            currency = .SGD
+            accounts = SampleData.accounts
+            currency = Currency(rawValue: SampleData.setting("defaultCurrency"))!
             hideAmounts = false
             if defaults.data(forKey: key) != nil { storageError = "本地数据无法读取，已载入演示数据。原始存储尚未覆盖。" }
             else { persist() }
@@ -72,25 +72,18 @@ final class PortfolioStore {
         accounts[index].holdings.removeAll { $0.id == id }
         persist()
     }
-    func reset() { accounts = DemoData.accounts; currency = .SGD; hideAmounts = false; persist() }
+    func reset() { accounts = SampleData.accounts; currency = Currency(rawValue: SampleData.setting("defaultCurrency"))!; hideAmounts = false; persist() }
 
     private static func migrateDefaultAccounts(_ saved: [InvestmentAccount]) -> [InvestmentAccount] {
         // An intentionally cleared portfolio must stay empty, including on its first upgrade.
         guard !saved.isEmpty else { return [] }
-        let legacyNames = [
-            "(068) Equity Investment Account": "Equity Investment Account",
-            "HSBC One Investment Services": "Hong Kong Investment Account",
-            "DBS Account": "Wealth Portfolio"
-        ]
-        let legacySymbols: [String: Set<String>] = [
-            "(068) Equity Investment Account": ["NVDA", "AAPL", "VOO"],
-            "HSBC One Investment Services": ["00700", "09988", "HKD"],
-            "DBS Account": ["SGS", "GIF", "SGD"]
-        ]
+        let legacy = SampleData.rows("legacy_accounts")
+        let legacyNames = Dictionary(uniqueKeysWithValues: legacy.map { (UUID(uuidString: $0.id)!, $0.string("previousName")) })
+        let legacySymbols = Dictionary(uniqueKeysWithValues: legacy.map { (UUID(uuidString: $0.id)!, Set($0.list("signatureSymbols"))) })
         var consumed = Set<Int>()
         var result: [InvestmentAccount] = []
 
-        for template in DemoData.accounts {
+        for template in SampleData.accounts {
             let available = saved.indices.filter { !consumed.contains($0) }
             let sameBankAndMarket: (InvestmentAccount) -> Bool = {
                 $0.institution.caseInsensitiveCompare(template.institution) == .orderedSame && $0.market == template.market
@@ -100,10 +93,10 @@ final class PortfolioStore {
                     sameBankAndMarket(saved[$0]) && saved[$0].accountNumber != nil && saved[$0].accountNumber == template.accountNumber
                 }
                 ?? available.first {
-                    sameBankAndMarket(saved[$0]) && (saved[$0].name == template.name || saved[$0].name == legacyNames[template.name])
+                    sameBankAndMarket(saved[$0]) && (saved[$0].name == template.name || saved[$0].name == legacyNames[template.id])
                 }
                 ?? available.first {
-                    guard sameBankAndMarket(saved[$0]), let signature = legacySymbols[template.name] else { return false }
+                    guard sameBankAndMarket(saved[$0]), let signature = legacySymbols[template.id] else { return false }
                     let symbols = Set(saved[$0].holdings.map { $0.symbol.uppercased() })
                     return signature.intersection(symbols).count >= 2
                 }
@@ -112,7 +105,7 @@ final class PortfolioStore {
                 consumed.insert(matched)
                 var account = saved[matched]
                 // Preserve IDs, edited names, balances and user-added or deleted holdings.
-                if account.name == legacyNames[template.name] { account.name = template.name }
+                if account.name == legacyNames[template.id] { account.name = template.name }
                 if account.accountNumber == nil { account.accountNumber = template.accountNumber }
                 account.holdings = account.holdings.map { holding in
                     var enriched = holding

@@ -7,11 +7,12 @@ struct RiskPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Risk & liquidity").font(.system(size: 15, weight: .medium))
-            Chart(Array(holdings.enumerated()), id: \.element.id) { index, holding in
-                PointMark(x: .value("Liquidity", holding.category == .cash ? 9 : holding.category == .bond ? 4 : 7), y: .value("Risk", holding.category == .cash ? 1 : holding.category == .bond ? 3 : 7 + index % 3))
+            Chart(holdings) { holding in
+                let profile = SampleData.row("asset_profiles", id: holding.category.rawValue)
+                PointMark(x: .value("Liquidity", profile.double("liquidityScore")), y: .value("Risk", profile.double("riskScore")))
                     .symbolSize(holding.currency.convert(holding.value, to: .SGD) / 200 + 50).foregroundStyle(Theme.color(holding.category).opacity(0.7))
             }.chartXScale(domain: 0...10).chartYScale(domain: 0...10).frame(height: 230).chartXAxisLabel("Liquidity →").chartYAxisLabel("Risk →")
-            ForEach(holdings) { item in HStack { Circle().fill(Theme.color(item.category)).frame(width: 8, height: 8); Text(item.name).font(.system(size: 12)); Spacer(); Text(item.category == .cash ? "Low risk" : item.category == .bond ? "Moderate" : "Higher risk").font(.system(size: 11)).foregroundStyle(Theme.muted) } }
+            ForEach(holdings) { item in HStack { Circle().fill(Theme.color(item.category)).frame(width: 8, height: 8); Text(item.name).font(.system(size: 12)); Spacer(); Text(SampleData.row("asset_profiles", id: item.category.rawValue).string("riskLabel")).font(.system(size: 11)).foregroundStyle(Theme.muted) } }
             Text("Illustrative category-based risk scores; not a suitability assessment.").font(.system(size: 10)).foregroundStyle(Theme.muted)
         }
     }

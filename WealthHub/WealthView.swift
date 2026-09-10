@@ -17,7 +17,7 @@ struct WealthView: View {
     @State private var analysisTask: Task<Void, Never>?
     @State private var expandedCategory: AssetClass?
     @State private var geography = false
-    @State private var scenario = 0
+    @State private var scenarioID = SampleData.setting("defaultWealthScenarioID")
     @State private var infoExpanded = false
     @State private var updateMessage: String?
     @State private var productPreview: String?
@@ -29,6 +29,7 @@ struct WealthView: View {
     private var allocation: [(category: AssetClass, value: Double)] { store.allocation(for: accounts) }
     private var topHolding: Holding? { holdings.max { $0.currency.convert($0.profit, to: store.currency) < $1.currency.convert($1.profit, to: store.currency) } }
     private var lowestHolding: Holding? { holdings.min { $0.currency.convert($0.profit, to: store.currency) < $1.currency.convert($1.profit, to: store.currency) } }
+    private var scenario: SampleRecord { SampleData.row("wealth_scenarios", id: scenarioID) }
     private var selectionTitle: String {
         if selectedIDs.isEmpty { return "All global accounts selected" }
         if accounts.count == 1, let account = accounts.first { return "\(account.institution) · \(account.name)" }
@@ -80,7 +81,7 @@ struct WealthView: View {
             }
             .onAppear {
                 if !selectionReady {
-                    if let first = store.accounts.first(where: { $0.institution == "HSBC" && $0.market == "Singapore" && $0.name.contains("Equity Investment") }) ?? store.accounts.first { selectedIDs = [first.id] }
+                    if let first = SampleData.defaultAccount(in: store.accounts) { selectedIDs = [first.id] }
                     selectionReady = true
                 }
             }
@@ -93,8 +94,11 @@ struct WealthView: View {
         VStack(alignment: .leading, spacing: 14) {
             if globalView {
                 HStack(spacing: 7) {
-                    Pill(title: "SG", selected: !accounts.isEmpty && accounts.allSatisfy { $0.market == "Singapore" }) { selectedIDs = Set(store.accounts.filter { $0.market == "Singapore" }.map(\.id)) }
-                    Pill(title: "HK", selected: !accounts.isEmpty && accounts.allSatisfy { $0.market == "Hong Kong" }) { selectedIDs = Set(store.accounts.filter { $0.market == "Hong Kong" }.map(\.id)) }
+                    ForEach(SampleData.rows("markets"), id: \.id) { market in
+                        Pill(title: market.string("shortName"), selected: !accounts.isEmpty && accounts.allSatisfy { $0.market == market.string("name") }) {
+                            selectedIDs = Set(store.accounts.filter { $0.market == market.string("name") }.map(\.id))
+                        }
+                    }
                     Pill(title: "◎ Global view", selected: selectedIDs.isEmpty) { selectedIDs = [] }
                 }
             }
@@ -267,8 +271,10 @@ struct WealthView: View {
         }
     }
     private var regionSlices: [(name: String, value: Double, color: Color)] {
-        [("North America", true, Color(hex: 0xE65A7B)), ("Asia-Pacific", false, Color(hex: 0xEBC544))].map { name, usd, color in
-            (name, holdings.filter { ($0.currency == .USD) == usd }.reduce(0) { $0 + $1.currency.convert($1.value, to: store.currency) }, color)
+        SampleData.rows("wealth_regions").map { region in
+            let name = region.string("name")
+            let included = holdings.filter { SampleData.row("currencies", id: $0.currency.rawValue).string("wealthRegion") == name }
+            return (name, included.reduce(0) { $0 + $1.currency.convert($1.value, to: store.currency) }, Color(hex: UInt32(region.int("color"))))
         }.filter { $0.1 > 0 }
     }
     private var chartSlices: [(name: String, value: Double, color: Color)] { geography ? regionSlices : allocation.map { ($0.category.rawValue, $0.value, Theme.color($0.category)) } }
@@ -276,17 +282,27 @@ struct WealthView: View {
     private var stressTest: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Stress Test Your Portfolio").font(.system(size: 18, weight: .medium))
-            HStack(spacing: 0) { ForEach(0..<3) { index in Button { scenario = index } label: { Text("Scenario \(index + 1)").font(.system(size: 12)).frame(maxWidth: .infinity).padding(.vertical, 10).overlay(alignment: .bottom) { Rectangle().fill(scenario == index ? Theme.red : Theme.line).frame(height: 1) }.contentShape(Rectangle()) }.buttonStyle(.plain) } }
-            Text(["Global equities fall by 10%.", "Bond prices fall by 5%.", "US dollar weakens by 10%."][scenario]).font(.system(size: 13))
+            HStack(spacing: 0) { ForEach(SampleData.rows("wealth_scenarios"), id: \.id) { item in Button { scenarioID = item.id } label: { Text(item.string("name")).font(.system(size: 12)).frame(maxWidth: .infinity).padding(.vertical, 10).overlay(alignment: .bottom) { Rectangle().fill(scenarioID == item.id ? Theme.red : Theme.line).frame(height: 1) }.contentShape(Rectangle()) }.buttonStyle(.plain) } }
+            Text(scenario.string("description")).font(.system(size: 13))
             Text("Hypothetical decline in portfolio value").font(.system(size: 11)).foregroundStyle(Theme.muted)
             Chart {
                 BarMark(x: .value("Portfolio", "Your current portfolio"), y: .value("Decline", total > 0 ? stressLoss / total * 100 : 0)).foregroundStyle(Theme.palette[1]).annotation(position: .top) { Text(String(format: "−%.2f%%", total > 0 ? stressLoss / total * 100 : 0)).font(.system(size: 10)) }
-                BarMark(x: .value("Portfolio", "Reference portfolio"), y: .value("Decline", [6.0, 2.0, 5.0][scenario])).foregroundStyle(Theme.palette[3])
+                BarMark(x: .value("Portfolio", "Reference portfolio"), y: .value("Decline", scenario.double("referenceDecline"))).foregroundStyle(Theme.palette[3])
             }.frame(height: 180).chartYScale(domain: 0...12)
-            DisclosureGroup("How is risk calculated?") { Text("Illustrative shocks are applied to current holdings. Reference assumptions: 60% equities, 40% bonds and 50% USD exposure.").font(.system(size: 11)).foregroundStyle(Theme.muted) }.font(.system(size: 12))
+            DisclosureGroup("How is risk calculated?") { Text(SampleData.setting("wealthReferenceAssumptions")).font(.system(size: 11)).foregroundStyle(Theme.muted) }.font(.system(size: 12))
         }
     }
-    private var stressLoss: Double { holdings.reduce(0) { result, item in let exposed = scenario == 0 ? [.stock, .fund].contains(item.category) : scenario == 1 ? item.category == .bond : item.currency == .USD; return result + (exposed ? item.currency.convert(item.value, to: store.currency) * (scenario == 1 ? 0.05 : 0.1) : 0) } }
+    private var stressLoss: Double {
+        let targets = SampleData.rows("wealth_scenario_targets").filter { $0.string("scenarioID") == scenarioID }
+        return holdings.reduce(0) { result, holding in
+            let exposed = targets.contains { target in
+                let category = target.string("category")
+                let currency = target.string("currency")
+                return (category.isEmpty || category == holding.category.rawValue) && (currency.isEmpty || currency == holding.currency.rawValue)
+            }
+            return result + (exposed ? holding.currency.convert(holding.value, to: store.currency) * scenario.double("shockRate") : 0)
+        }
+    }
     private var insights: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Your portfolio at a glance").font(.system(size: 20, weight: .medium))

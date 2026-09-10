@@ -19,13 +19,7 @@ struct WealthBackdrop: View {
 struct WealthProductsSection: View {
     var onSelect: (String) -> Void
     @State private var category = "Products"
-    private var items: [(String, String)] {
-        category == "Products" ? [
-            ("Open investment\naccount", "wallet.bifold"), ("Stocks", "chart.xyaxis.line"), ("Unit Trusts", "square.stack.3d.up"),
-            ("Equity markets", "globe"), ("Foreign\nexchange", "dollarsign.arrow.circlepath"), ("Insurance", "umbrella"),
-            ("Structured\nproducts", "square.stack.3d.down.right"), ("Bonds", "doc.text"), ("Time deposit", "clock.arrow.circlepath")
-        ] : [("Portfolio review", "chart.pie"), ("Documents", "doc.text"), ("Contact us", "bubble.left.and.bubble.right")]
-    }
+    private var items: [SampleRecord] { SampleData.rows("products").filter { $0.string("category") == category } }
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             HStack {
@@ -35,11 +29,12 @@ struct WealthProductsSection: View {
             }
             HStack(spacing: 8) { Pill(title: "Products", selected: category == "Products") { category = "Products" }; Pill(title: "Services", selected: category == "Services") { category = "Services" } }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), alignment: .center, spacing: 24) {
-                ForEach(items, id: \.0) { item in
-                    Button { onSelect(item.0.replacingOccurrences(of: "\n", with: " ")) } label: {
+                ForEach(items, id: \.id) { item in
+                    let title = item.string("title").replacingOccurrences(of: "\\n", with: "\n")
+                    Button { onSelect(title.replacingOccurrences(of: "\n", with: " ")) } label: {
                         VStack(spacing: 9) {
-                            Image(systemName: item.1).font(.system(size: 25, weight: .light)).foregroundStyle(Theme.red).frame(width: 58, height: 58).background(.white, in: Circle())
-                            Text(item.0).font(.system(size: 12, weight: .medium)).lineSpacing(3).multilineTextAlignment(.center).frame(height: 34, alignment: .top)
+                            Image(systemName: item.string("symbol")).font(.system(size: 25, weight: .light)).foregroundStyle(Theme.red).frame(width: 58, height: 58).background(.white, in: Circle())
+                            Text(title).font(.system(size: 12, weight: .medium)).lineSpacing(3).multilineTextAlignment(.center).frame(height: 34, alignment: .top)
                         }.frame(maxWidth: .infinity).contentShape(Rectangle())
                     }.buttonStyle(.plain)
                 }
@@ -96,7 +91,7 @@ struct WealthAssistantSheet: View {
                     VStack(alignment: .leading, spacing: 20) {
                         Text("How can we help you today?").font(.system(size: 25, weight: .light))
                         Text("Explore your selected portfolio. Demo answers are based on the holdings on this device.").font(.system(size: 13)).foregroundStyle(Theme.muted).lineSpacing(4)
-                        ForEach(["Summarise my portfolio", "What is my largest allocation?", "How can I add other holdings?"], id: \.self) { item in Button { answer(item) } label: { HStack { Text(item).font(.system(size: 14)); Spacer(); Image(systemName: "arrow.right") }.padding(14).background(Theme.background).contentShape(Rectangle()) }.buttonStyle(.plain) }
+                        ForEach(SampleData.rows("assistant_suggestions"), id: \.id) { item in Button { answer(item.string("prompt")) } label: { HStack { Text(item.string("prompt")).font(.system(size: 14)); Spacer(); Image(systemName: "arrow.right") }.padding(14).background(Theme.background).contentShape(Rectangle()) }.buttonStyle(.plain) }
                         ForEach(Array(messages.enumerated()), id: \.offset) { _, item in VStack(alignment: .leading, spacing: 12) { Text(item.question).font(.system(size: 14, weight: .medium)); Text(item.answer).font(.system(size: 14)).foregroundStyle(Theme.muted).lineSpacing(5) }.padding(16).background(Theme.background) }
                     }.padding(20)
                 }
@@ -108,10 +103,18 @@ struct WealthAssistantSheet: View {
     private func answer(_ prompt: String) {
         let allocation = store.allocation(for: accounts)
         let total = accounts.reduce(0) { $0 + $1.value(in: store.currency) }
-        let response: String
-        if prompt.localizedCaseInsensitiveContains("add") { response = "In Wealth, generate your portfolio analysis and select ‘Add other holdings to analyse’. You can include your global HSBC accounts, connect a demo bank, or upload a statement and review its holdings." }
-        else if prompt.localizedCaseInsensitiveContains("allocation") { response = "Your largest allocation is \(allocation.first?.category.rawValue ?? "not yet available"), representing \(total > 0 ? Int((allocation.first?.value ?? 0) / total * 100) : 0)% of your selected assets. Open Portfolio analysis to explore the breakdown." }
-        else { response = "Your selected portfolio contains \(accounts.flatMap(\.holdings).count) holdings across \(accounts.count) accounts, with a combined market value of \(store.amount(total)). This demo supports portfolio summaries, allocation questions and adding other holdings." }
+        guard let rule = SampleData.rows("assistant_rules").first(where: { row in
+            let keywords = row.list("keywords")
+            return keywords.isEmpty || keywords.contains { prompt.localizedCaseInsensitiveContains($0) }
+        }) else { return }
+        let values = [
+            "allocationName": allocation.first?.category.rawValue ?? "not yet available",
+            "allocationPercent": String(total > 0 ? Int((allocation.first?.value ?? 0) / total * 100) : 0),
+            "holdingCount": String(accounts.flatMap(\.holdings).count),
+            "accountCount": String(accounts.count),
+            "totalAmount": store.amount(total)
+        ]
+        let response = values.reduce(rule.string("response")) { text, item in text.replacingOccurrences(of: "{\(item.key)}", with: item.value) }
         messages.append((prompt, response))
     }
 }

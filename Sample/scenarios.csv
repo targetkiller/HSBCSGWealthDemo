@@ -1,0 +1,4 @@
+id,title,currencies,assetClasses,regions,shock,skipMatchingReportingCurrency
+usd,If US currency drops by 10%,USD,,,-0.1,true
+stocks,If equity markets drop by 15%,,Stocks|Options,,-0.15,false
+hongKong,If Hong Kong holdings drop by 10%,,,Hong Kong,-0.1,false

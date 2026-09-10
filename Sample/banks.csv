@@ -1,0 +1,6 @@
+id,name,portfolioEnabled,accountEnabled
+dbs,DBS,true,true
+hsbc,HSBC,false,true
+ocbc,OCBC,true,true
+uob,UOB,true,true
+standard-chartered,Standard Chartered,false,true

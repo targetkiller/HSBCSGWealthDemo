@@ -20,16 +20,7 @@ enum StatementExtractionService {
 
     /// Explicitly illustrative sample data; never used as a fallback for a user's file.
     static var sampleHoldings: [Holding] {
-        [
-            Holding(name: "INT’L ENT", symbol: "00100", category: .stock, currency: .HKD, quantity: 300, price: 0.60, averageCost: 0.55),
-            Holding(name: "BABA-SW", symbol: "09988", category: .stock, currency: .HKD, quantity: 200, price: 100, averageCost: 95),
-            Holding(name: "SHIMAO GROUP", symbol: "00813", category: .stock, currency: .HKD, quantity: 100, price: 1.10, averageCost: 1.20),
-            Holding(name: "CN HEALTH TECH", symbol: "01069", category: .stock, currency: .HKD, quantity: 300, price: 0.20, averageCost: 0.18),
-            Holding(name: "TENCENT", symbol: "00700", category: .stock, currency: .HKD, quantity: 400, price: 420, averageCost: 390),
-            Holding(name: "JD-SW", symbol: "09618", category: .stock, currency: .HKD, quantity: 150, price: 130, averageCost: 125),
-            Holding(name: "BYD ELECTRONICS", symbol: "00285", category: .stock, currency: .HKD, quantity: 240, price: 35, averageCost: 32),
-            Holding(name: "CCB", symbol: "00939", category: .stock, currency: .HKD, quantity: 300, price: 6.50, averageCost: 6)
-        ]
+        SampleData.holdings(in: "statement-preview")
     }
 
     static func extract(url: URL) async throws -> [Holding] {

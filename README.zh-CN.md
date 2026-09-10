@@ -54,6 +54,8 @@ bash scripts/run-demo.sh
 
 ## 数据口径与范围
 
+默认账户、组合模板、持仓和演示分析已集中为 **[Sample 可配置数据表](Sample/README.md#中文使用说明)**。说明包含全部 20 张 CSV 的用途、字段关联、编辑方式，以及重新构建后通过 Restore demo data 加载新配置的步骤；已有本地数据不会被自动覆盖。
+
 - 默认预关联 8 个演示账户、40 项持仓。新加坡：HSBC Current Account、(068) Equity Investment Account、(085) Unit Trust Investment Account、DBS Account；香港：HSBC Current Account、HSBC One Investment Services、HSBC One FundMax Account、Standard Chartered Account。账户选择面板展示账号及银行标识，支持全局、地区和跨地区多选。
 - 老版本的 3 个默认账户会执行一次迁移：补齐新演示账户和分类信息，同时保留原 ID、用户修改和新增账户。迁移完成后的删除不会被自动恢复；已清空的组合继续保持为空。
 - 本地演示账户和固定汇率，无银行 API、行情 API、真实金融交易或远程数据上传。
@@ -66,7 +68,7 @@ bash scripts/run-demo.sh
 - 为便于演示，Try a sample statement 提供设计稿中的 8 条港股持仓，价格与成本为示例。既有菜单内的旧 CSV 导入页面仍限制 1 MB，建议演示使用 Wealth 新入口。
 - 数据存于应用沙盒 UserDefaults，仅用于 Demo。生产版本需补充安全存储、账户认证、授权服务、真实数据适配和合规评估。
 
-导入示例：`Samples/statement.csv`。支持的 category：`Stocks`、`Unit trusts`、`Bonds`、`Cash and FX`、`Structured products`、`Insurance`、`Options`。
+执行 `./scripts/sample-data.sh validate`，使用 App 的加载器校验配置；执行 `./scripts/sample-data.sh export-statement`，生成 `build/Sample/statement.csv` 供手动导入测试，也可在命令末尾指定其他输出路径。导出使用 [`Sample/holdings.csv`](Sample/holdings.csv) 中 `setID=csv-file-export` 的 4 条持仓，App 内独立的 2 条 CSV 样例则使用 `csv-import`。两者都在这一张持仓表中维护，无需另存一份可编辑账单数据。支持的 category：`Stocks`、`Unit trusts`、`Bonds`、`Cash and FX`、`Structured products`、`Insurance`、`Options`。
 
 ## 测试
 

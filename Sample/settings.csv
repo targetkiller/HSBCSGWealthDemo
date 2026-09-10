@@ -1,0 +1,10 @@
+id,value
+defaultCurrency,SGD
+defaultAccountID,10000000-0000-4000-8000-000000000002
+defaultBankID,dbs
+defaultMarketID,singapore
+defaultManualAccountName,My investment account
+defaultWealthScenarioID,equities-fall
+wealthReferenceAssumptions,"Illustrative shocks are applied to current holdings. Reference assumptions: 60% equities, 40% bonds and 50% USD exposure."
+statementPreviewSource,sample statement
+statementCSVFilename,Sample statement.csv

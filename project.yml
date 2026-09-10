@@ -11,7 +11,11 @@ targets:
   WealthHub:
     type: application
     platform: iOS
-    sources: [WealthHub]
+    sources:
+      - path: WealthHub
+      - path: Sample
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.wealthhub.demo

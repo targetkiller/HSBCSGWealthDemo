@@ -1,0 +1,5 @@
+id,scenarioID,category,currency
+equities-stocks,equities-fall,Stocks,
+equities-funds,equities-fall,Unit trusts,
+bonds,bonds-fall,Bonds,
+usd,usd-fall,,USD

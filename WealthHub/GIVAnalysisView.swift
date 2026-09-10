@@ -7,7 +7,7 @@ struct GIVAnalysisView: View {
     @State private var exposure = "Currency"
     @State private var selectedSlice: String?
     @State private var expandedInsight = false
-    @State private var scenario = GIVScenario.usd
+    @State private var scenario = GIVScenario.configuredDefault
     private var slices: [GIVSlice] { exposure == "Currency" ? data.currencies : exposure == "Region" ? data.regions : data.sectors }
     private var focused: GIVSlice? { slices.first { $0.name == selectedSlice } ?? slices.first }
 
@@ -114,9 +114,12 @@ struct GIVAnalysisView: View {
     private var insightText: String {
         guard let focused else { return "Select an account with holdings to see your exposure." }
         if exposure == "Currency" {
-            return "\(focused.name) represents \(data.percent(focused.value)) of the selected portfolio. A 10% fall in this currency against \(store.currency.rawValue) would change the converted value of these holdings by \(store.amount(focused.name == store.currency.rawValue ? 0 : -focused.value * 0.10))."
+            let shock = SampleData.row("analytics", id: "default").double("currencyIllustrationShock")
+            let magnitude = (abs(shock) * 100).formatted(.number.precision(.fractionLength(0...2)))
+            return "\(focused.name) represents \(data.percent(focused.value)) of the selected portfolio. A \(magnitude)% \(shock < 0 ? "fall" : "rise") in this currency against \(store.currency.rawValue) would change the converted value of these holdings by \(store.amount(focused.name == store.currency.rawValue ? 0 : focused.value * shock))."
         }
-        return "\(focused.name) accounts for \(data.percent(focused.value)) of your selected holdings. \(focused.value > data.value * 0.4 ? "This concentration makes this exposure a major contributor to changes in your portfolio value." : "Review this exposure alongside the other holdings to understand the balance of your portfolio.")"
+        let threshold = SampleData.row("analytics", id: "default").double("concentrationThreshold")
+        return "\(focused.name) accounts for \(data.percent(focused.value)) of your selected holdings. \(focused.value > data.value * threshold ? "This concentration makes this exposure a major contributor to changes in your portfolio value." : "Review this exposure alongside the other holdings to understand the balance of your portfolio.")"
     }
 
     private var scenarioLoss: Double { data.entries.reduce(0) { $0 + $1.value * scenario.shock(for: $1, reportingCurrency: store.currency) } }
@@ -163,24 +166,29 @@ struct GIVAnalysisView: View {
         var numerator = 0.0, denominator = 0.0
         for entry in data.entries {
             let value = entry.value * (stressed ? 1 + scenario.shock(for: entry, reportingCurrency: store.currency) : 1)
-            let score: Double
-            switch entry.holding.category { case .cash: score = 1; case .bond: score = 3; case .fund: score = 5; case .stock: score = 7; case .insurance: score = 3; case .option: score = 9; case .other: score = 6 }
+            let score = SampleData.row("asset_profiles", id: entry.holding.category.rawValue).double("riskScore")
             numerator += value * score; denominator += value
         }
         return denominator > 0 ? numerator / denominator : 0
     }
 }
 
-private enum GIVScenario: String, Identifiable, CaseIterable {
-    case usd, stocks, hongKong
-    var id: String { rawValue }
-    var title: String { switch self { case .usd: "If US currency drops by 10%"; case .stocks: "If equity markets drop by 15%"; case .hongKong: "If Hong Kong holdings drop by 10%" } }
+private struct GIVScenario: Identifiable {
+    let record: SampleRecord
+    var id: String { record.id }
+    var title: String { record.string("title") }
+    static var allCases: [GIVScenario] { SampleData.rows("scenarios").map { GIVScenario(record: $0) } }
+    static var configuredDefault: GIVScenario {
+        GIVScenario(record: SampleData.row("scenarios", id: SampleData.row("analytics", id: "default").string("defaultScenarioID")))
+    }
+
     func shock(for entry: GIVEntry, reportingCurrency: Currency) -> Double {
-        switch self {
-        case .usd: entry.holding.currency == .USD && reportingCurrency != .USD ? -0.10 : 0
-        case .stocks: entry.holding.category == .stock || entry.holding.category == .option ? -0.15 : 0
-        case .hongKong: entry.region == "Hong Kong" ? -0.10 : 0
-        }
+        let currencyMatches = record.list("currencies").contains(entry.holding.currency.rawValue)
+        let assetMatches = record.list("assetClasses").contains(entry.holding.category.rawValue)
+        let regionMatches = record.list("regions").contains(entry.region)
+        guard currencyMatches || assetMatches || regionMatches else { return 0 }
+        if currencyMatches && record.bool("skipMatchingReportingCurrency") && entry.holding.currency == reportingCurrency { return 0 }
+        return record.double("shock")
     }
 }
 
@@ -300,13 +308,7 @@ private struct GIVRegionMap: View {
     }
     private func coordinate(_ region: String) -> CGPoint? {
         let value = region.lowercased()
-        if value.contains("united states") || value.contains("north america") { return .init(x: 0.21, y: 0.31) }
-        if value.contains("hong kong") { return .init(x: 0.79, y: 0.44) }
-        if value.contains("singapore") { return .init(x: 0.77, y: 0.58) }
-        if value.contains("china") { return .init(x: 0.78, y: 0.32) }
-        if value.contains("europe") || value.contains("kingdom") { return .init(x: 0.52, y: 0.28) }
-        if value.contains("japan") { return .init(x: 0.87, y: 0.39) }
-        if value.contains("australia") || value.contains("pacific") { return .init(x: 0.86, y: 0.77) }
-        return nil
+        guard let region = SampleData.rows("regions").first(where: { row in row.list("aliases").contains { value.contains($0.lowercased()) } }) else { return nil }
+        return CGPoint(x: region.double("mapX"), y: region.double("mapY"))
     }
 }

@@ -1,0 +1,4 @@
+id,keywords,response
+add-holdings,add,"In Wealth, generate your portfolio analysis and select ‘Add other holdings to analyse’. You can include your global HSBC accounts, connect a demo bank, or upload a statement and review its holdings."
+allocation,allocation,"Your largest allocation is {allocationName}, representing {allocationPercent}% of your selected assets. Open Portfolio analysis to explore the breakdown."
+summary,,"Your selected portfolio contains {holdingCount} holdings across {accountCount} accounts, with a combined market value of {totalAmount}. This demo supports portfolio summaries, allocation questions and adding other holdings."

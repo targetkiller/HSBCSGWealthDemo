@@ -3,12 +3,15 @@ import UniformTypeIdentifiers
 
 struct AddAccountFlow: View {
     @Environment(PortfolioStore.self) private var store
-    @State private var bank = "DBS"
-    @State private var market = "Singapore"
+    @State private var bankID = SampleData.setting("defaultBankID")
+    @State private var marketID = SampleData.setting("defaultMarketID")
     @State private var name = ""
     @State private var step = 0
     @State private var consent = false
     @State private var addedID: UUID?
+    private var bank: String { SampleData.row("banks", id: bankID).string("name") }
+    private var market: SampleRecord { SampleData.row("markets", id: marketID) }
+    private var banks: [SampleRecord] { SampleData.rows("banks").filter { $0.bool("accountEnabled") } }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -28,15 +31,15 @@ struct AddAccountFlow: View {
                     Text("See your full financial picture, across banks and markets.").font(.subheadline).foregroundStyle(Theme.muted)
                     NavigationLink { StatementImportView() } label: { HStack { Image(systemName: "doc.badge.arrow.up").font(.title2).foregroundStyle(Theme.red); VStack(alignment: .leading, spacing: 6) { Text("Upload statement").font(.system(size: 16, weight: .medium)); Text("Import holdings from a CSV file").font(.system(size: 12)).foregroundStyle(Theme.muted) }; Spacer(); Image(systemName: "chevron.right") }.padding(18).background(Theme.background).contentShape(Rectangle()) }.buttonStyle(.plain)
                     Text("Connect to another bank").font(.system(size: 18, weight: .medium))
-                    HStack { ForEach(["Singapore", "Hong Kong"], id: \.self) { item in Pill(title: item, selected: market == item) { market = item } } }
-                    ForEach(["DBS", "HSBC", "OCBC", "UOB", "Standard Chartered"], id: \.self) { item in
-                        Button { bank = item } label: { HStack { BankMark(bank: item); Text(item).font(.system(size: 15)); Spacer(); Image(systemName: bank == item ? "largecircle.fill.circle" : "circle").font(.system(size: 23)) }.padding(.vertical, 12).contentShape(Rectangle()) }.buttonStyle(.plain)
+                    HStack { ForEach(SampleData.rows("markets"), id: \.id) { item in Pill(title: item.string("name"), selected: marketID == item.id) { marketID = item.id } } }
+                    ForEach(banks, id: \.id) { item in
+                        Button { bankID = item.id } label: { HStack { BankMark(bank: item.string("name")); Text(item.string("name")).font(.system(size: 15)); Spacer(); Image(systemName: bankID == item.id ? "largecircle.fill.circle" : "circle").font(.system(size: 23)) }.padding(.vertical, 12).contentShape(Rectangle()) }.buttonStyle(.plain)
                         Divider()
                     }
                     TextField("Account nickname (optional)", text: $name).textFieldStyle(.roundedBorder)
                     PrimaryButton(title: "Continue") { step = 1 }
                     Button {
-                        let account = InvestmentAccount(name: name.isEmpty ? "My investment account" : name, institution: bank, currency: market == "Singapore" ? .SGD : .HKD, colorIndex: store.accounts.count, market: market)
+                        let account = InvestmentAccount(name: name.isEmpty ? SampleData.setting("defaultManualAccountName") : name, institution: bank, currency: Currency(rawValue: market.string("currency"))!, colorIndex: store.accounts.count, market: market.string("name"))
                         store.save(account); addedID = account.id; step = 2
                     } label: {
                         Text("Create an empty account manually").font(.system(size: 13))
@@ -48,10 +51,10 @@ struct AddAccountFlow: View {
         }.navigationTitle("Add account").navigationBarTitleDisplayMode(.inline)
     }
     private func connect() {
-        var account = DemoData.accounts[2]
-        account.id = UUID(); account.institution = bank; account.name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "\(bank) Investment Account" : name
-        account.market = market; account.currency = market == "Singapore" ? .SGD : .HKD; account.colorIndex = store.accounts.count
-        account.holdings = account.holdings.map { holding in var copy = holding; copy.id = UUID(); return copy }
+        var account = SampleData.makeAccount(template: "linked-account")
+        account.institution = bank
+        account.name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? account.name.replacingOccurrences(of: "{bank}", with: bank) : name
+        account.market = market.string("name"); account.currency = Currency(rawValue: market.string("currency"))!; account.colorIndex = store.accounts.count
         store.save(account); addedID = account.id; step = 2
     }
 }
@@ -62,7 +65,7 @@ struct StatementImportView: View {
     @State private var holdings: [Holding] = []
     @State private var error: String?
     @State private var filename = ""
-    @State private var accountName = "Imported portfolio"
+    @State private var accountName = SampleData.row("account_templates", id: "statement-import").string("name")
     @State private var importedID: UUID?
     var body: some View {
         ScrollView {
@@ -74,10 +77,10 @@ struct StatementImportView: View {
                     NavigationLink { AccountDetailView(accountID: importedID) } label: { Label("View imported account", systemImage: "arrow.right").frame(maxWidth: .infinity).padding(16).foregroundStyle(.white).background(Theme.red).contentShape(Rectangle()) }.buttonStyle(.plain)
                 } else {
                     Button { picking = true } label: { VStack(spacing: 14) { Image(systemName: "doc.badge.arrow.up").font(.system(size: 38, weight: .light)); Text("Select a CSV statement").font(.system(size: 16, weight: .medium)); Text("CSV · Up to 1 MB / 1,000 holdings").font(.caption).foregroundStyle(Theme.muted) }.frame(maxWidth: .infinity).padding(.vertical, 36).background(Theme.background).overlay(Rectangle().stroke(Theme.line, style: StrokeStyle(lineWidth: 1, dash: [6]))).contentShape(Rectangle()) }.buttonStyle(.plain)
-                    Button { do { holdings = try StatementParser.parse(StatementParser.template); filename = "Sample statement.csv"; error = nil } catch { self.error = error.localizedDescription } } label: {
+                    Button { do { holdings = try StatementParser.parse(StatementParser.template); filename = SampleData.setting("statementCSVFilename"); error = nil } catch { self.error = error.localizedDescription } } label: {
                         Text("Try a sample statement").font(.subheadline).frame(maxWidth: .infinity).contentShape(Rectangle())
                     }
-                    DisclosureGroup("CSV format and supported values") { Text("Columns: name, symbol, category, currency, quantity, price, averageCost\n\nCategories: \(AssetClass.allCases.map(\.rawValue).joined(separator: ", "))\nCurrencies: SGD, USD, HKD, CNY\n\nUse plain comma-separated values without quoted commas. PDF/OCR import is not included in this demo.").font(.caption).foregroundStyle(Theme.muted).padding(.top, 10) }
+                    DisclosureGroup("CSV format and supported values") { Text("Columns: name, symbol, category, currency, quantity, price, averageCost\n\nCategories: \(AssetClass.allCases.map(\.rawValue).joined(separator: ", "))\nCurrencies: \(Currency.allCases.map(\.rawValue).joined(separator: ", "))\n\nQuote values containing commas, quotation marks or line breaks. This import screen accepts CSV files.").font(.caption).foregroundStyle(Theme.muted).padding(.top, 10) }
                     if let error { Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(Theme.red) }
                     if !holdings.isEmpty {
                         Label(filename, systemImage: "checkmark.circle").font(.subheadline).foregroundStyle(Theme.green)
@@ -85,7 +88,10 @@ struct StatementImportView: View {
                         Text("Preview · \(holdings.count) holdings").font(.headline)
                         ForEach(holdings) { holding in HStack { VStack(alignment: .leading) { Text(holding.name).font(.subheadline); Text(holding.symbol).font(.caption).foregroundStyle(Theme.muted) }; Spacer(); Text(holding.currency.format(holding.value)).font(.subheadline) }.padding(.vertical, 7) }
                         PrimaryButton(title: "Confirm import") {
-                            let account = InvestmentAccount(name: accountName.trimmingCharacters(in: .whitespacesAndNewlines), institution: "Statement", currency: .SGD, colorIndex: store.accounts.count, holdings: holdings)
+                            var account = SampleData.makeAccount(template: "statement-import")
+                            account.name = accountName.trimmingCharacters(in: .whitespacesAndNewlines)
+                            account.colorIndex = store.accounts.count
+                            account.holdings = holdings
                             store.save(account); importedID = account.id
                         }.disabled(accountName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
