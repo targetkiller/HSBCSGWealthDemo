@@ -54,6 +54,184 @@ final class PortfolioTests: XCTestCase {
         XCTAssertThrowsError(try StatementParser.parse(header + "Cash,SGD,Cash and FX,SGD,10,1,1\nBad,X,Stocks,USD,1,2"))
     }
 
+    #if canImport(UIKit)
+    func testFUTUScreenshotTextRecognizesAccountAndBothCurrencySections() throws {
+        let result = try StatementExtractionService.parseStatementText(futuScreenshotOCRText)
+        let account = try XCTUnwrap(result.account)
+        XCTAssertEqual(account.institution, "FUTU")
+        XCTAssertTrue(account.name.contains("FUTU"))
+        XCTAssertFalse(account.evidence.isEmpty)
+        XCTAssertNil(account.market, "A screenshot containing SG and US positions does not establish the account's home market.")
+        XCTAssertNil(account.accountNumber, "The footer refers to another account and must not become the imported account number.")
+        XCTAssertEqual(result.holdings.count, 2, "Buying power, totals and P/L are not additional positions.")
+
+        let dbs = try XCTUnwrap(result.holdings.first { $0.symbol == "D05" })
+        XCTAssertEqual(dbs.name, "DBS")
+        XCTAssertEqual(dbs.currency, .SGD)
+        XCTAssertEqual(dbs.region, "Singapore")
+        XCTAssertEqual(dbs.quantity, 2)
+        XCTAssertEqual(dbs.price, 77.080, accuracy: 0.00001)
+        XCTAssertEqual(dbs.averageCost, 57.30, accuracy: 0.00001)
+        XCTAssertEqual(dbs.value, 154.16, accuracy: 0.00001)
+        XCTAssertEqual(dbs.cost, 114.60, accuracy: 0.00001)
+
+        let kitt = try XCTUnwrap(result.holdings.first { $0.symbol == "KITT" })
+        XCTAssertEqual(kitt.name, "Nauticus Rob...")
+        XCTAssertEqual(kitt.currency, .USD)
+        XCTAssertEqual(kitt.region, "United States")
+        XCTAssertEqual(kitt.quantity, 3)
+        XCTAssertEqual(kitt.price, 0.6990, accuracy: 0.00001)
+        XCTAssertEqual(kitt.averageCost, 362.88, accuracy: 0.00001)
+        XCTAssertEqual(kitt.value, 2.097, accuracy: 0.00001)
+        XCTAssertEqual(kitt.cost, 1_088.64, accuracy: 0.00001)
+        XCTAssertFalse(result.warnings.isEmpty, "The inferred institution and clipped security name require review.")
+    }
+
+    func testFUTUScreenshotMissingDetailRowKeepsOnlyVerifiedHoldings() throws {
+        let missingQuantityAndCost = futuScreenshotOCRText.replacingOccurrences(of: "KITT\t3\t362.88", with: "")
+        let result = try StatementExtractionService.parseStatementText(missingQuantityAndCost)
+        XCTAssertEqual(result.holdings.map(\.symbol), ["D05"])
+        XCTAssertTrue(result.warnings.contains { $0.localizedCaseInsensitiveContains("Nauticus") },
+                      "The reviewer needs a warning identifying the incomplete holding.")
+    }
+
+    func testFUTUScreenshotUnreadableSectionCurrencyNeverInheritsPreviousMarketCurrency() throws {
+        for unclearHeader in ["US 130.45", "US 130.45 USO", "US 130.45 SGD"] {
+            let text = futuScreenshotOCRText.replacingOccurrences(of: "US 130.45 USD", with: unclearHeader)
+            let result = try StatementExtractionService.parseStatementText(text)
+            XCTAssertEqual(result.holdings.map(\.symbol), ["D05"],
+                           "The US row must not be imported using the preceding SG section's currency: \(unclearHeader)")
+            XCTAssertEqual(result.holdings.first?.currency, .SGD)
+            XCTAssertTrue(result.warnings.contains { $0.localizedCaseInsensitiveContains("currency") },
+                          "An unreadable or inconsistent section currency requires a specific review warning.")
+        }
+    }
+
+    func testFUTUScreenshotInvalidNumbersAreNotReplacedByMarketValueOrPnL() throws {
+        let invalidRows = [
+            ("KITT\t3\t362.88", "KITT\t-3\t362.88"),
+            ("KITT\t3\t362.88", "KITT\t3\tnan"),
+            ("Nauticus Rob...\t2.10\t0.6990\t0.00", "Nauticus Rob...\t2.10\tunreadable\t0.00")
+        ]
+        for (original, replacement) in invalidRows {
+            let text = futuScreenshotOCRText.replacingOccurrences(of: original, with: replacement)
+            let result = try StatementExtractionService.parseStatementText(text)
+            XCTAssertEqual(result.holdings.map(\.symbol), ["D05"], replacement)
+            XCTAssertTrue(result.warnings.contains { $0.localizedCaseInsensitiveContains("Nauticus") }, replacement)
+        }
+    }
+
+    func testFUTUScreenshotWithoutHoldingsRejectsSummaryAmounts() {
+        let summaryOnly = futuScreenshotOCRText
+            .replacingOccurrences(of: "DBS\t154.16\t77.080\t-0.84\nD05\t2\t57.30", with: "")
+            .replacingOccurrences(of: "Nauticus Rob...\t2.10\t0.6990\t0.00\nKITT\t3\t362.88", with: "")
+        XCTAssertThrowsError(try StatementExtractionService.parseStatementText(summaryOnly))
+    }
+
+    func testGenericStatementHeadersAndSecurityNamesDoNotTriggerFUTUDetection() throws {
+        let text = """
+        Accounts
+        Max Buying Power\t190.15 SGD
+        Name | Symbol | Quantity | Currency | Price | Average Cost
+        DBS | D05 | 2 | SGD | 77.080 | 57.30
+        """
+        let result = try StatementExtractionService.parseStatementText(text)
+        XCTAssertNil(result.account, "Generic account headings and a bank's listed stock do not identify the broker.")
+        XCTAssertEqual(result.holdings.count, 1)
+        XCTAssertEqual(result.holdings.first?.symbol, "D05")
+        XCTAssertEqual(result.holdings.first?.quantity, 2)
+    }
+
+    func testFUTUStockHoldingDoesNotIdentifyTheBrokerButAStatementHeaderDoes() throws {
+        let holdingsTable = """
+        Name | Symbol | Quantity | Currency | Price | Average Cost
+        Futu Holdings | FUTU | 2 | USD | 100 | 90
+        """
+        let securityNameOnly = try StatementExtractionService.parseStatementText("Accounts\n" + holdingsTable)
+        XCTAssertNil(securityNameOnly.account, "Owning FUTU shares does not establish which broker holds the account.")
+        XCTAssertEqual(securityNameOnly.holdings.map(\.symbol), ["FUTU"])
+
+        let brandedStatement = try StatementExtractionService.parseStatementText("FUTU Account Statement\n" + holdingsTable)
+        XCTAssertEqual(brandedStatement.account?.institution, "FUTU")
+        XCTAssertEqual(brandedStatement.holdings.map(\.symbol), ["FUTU"])
+    }
+
+    func testGenericTablesAndExplicitShareRowsRetainTheirLabeledAmounts() throws {
+        let table = """
+        Name | Symbol | Quantity | Currency | Price | Average Cost
+        Apple | AAPL | 4 | USD | 210.50 | 180.25
+        Cash ETF | CASH | 7 | SGD | 1.25 | 1.10
+        """
+        let result = try StatementExtractionService.parseStatementText(table)
+        XCTAssertEqual(result.holdings.map(\.symbol), ["AAPL", "CASH"])
+        XCTAssertEqual(result.holdings.map(\.currency), [.USD, .SGD])
+        XCTAssertEqual(result.holdings.map(\.quantity), [4, 7])
+        XCTAssertEqual(result.holdings.map(\.price), [210.50, 1.25])
+        XCTAssertEqual(result.holdings.map(\.averageCost), [180.25, 1.10])
+
+        let explicit = try StatementExtractionService.parseStatementText("Apple (AAPL) 4 shares USD price: 210.50; average cost: 180.25")
+        XCTAssertEqual(explicit.holdings.count, 1)
+        XCTAssertEqual(explicit.holdings.first?.symbol, "AAPL")
+        XCTAssertEqual(explicit.holdings.first?.currency, .USD)
+        XCTAssertEqual(explicit.holdings.first?.quantity, 4)
+        XCTAssertEqual(explicit.holdings.first?.price, 210.50)
+        XCTAssertEqual(explicit.holdings.first?.averageCost, 180.25)
+    }
+
+    func testCSVFileExtractionPreservesExplicitCategoriesCurrenciesAndAmounts() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".csv")
+        let csv = """
+        name,symbol,category,currency,quantity,price,averageCost
+        Cash balance,SGD,Cash and FX,SGD,190.15,1,1
+        US equity,AAPL,Stocks,USD,3,210.5,180.25
+        """
+        try csv.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try await StatementExtractionService.extract(url: url)
+        XCTAssertNil(result.account, "The seven-column CSV contains positions, not account ownership metadata.")
+        XCTAssertEqual(result.holdings.map(\.symbol), ["SGD", "AAPL"])
+        XCTAssertEqual(result.holdings.map(\.category), [.cash, .stock])
+        XCTAssertEqual(result.holdings.map(\.currency), [.SGD, .USD])
+        XCTAssertEqual(result.holdings.map(\.quantity), [190.15, 3])
+        XCTAssertEqual(result.holdings.map(\.price), [1, 210.5])
+        XCTAssertEqual(result.holdings.map(\.averageCost), [1, 180.25])
+    }
+
+    func testUnrecognizedStatementTextNeverFallsBackToSampleHoldings() {
+        for text in ["", "Accounts\nMarket Value\n154.15\nToday's P/L\n-0.83", "This image contains no holdings table."] {
+            XCTAssertThrowsError(try StatementExtractionService.parseStatementText(text))
+        }
+    }
+
+    // Vision's actual row reconstruction from the supplied screenshot. The image itself is not bundled.
+    // Two-line price/cost and market-value/quantity cells deliberately remain on separate rows.
+    private var futuScreenshotOCRText: String {
+        """
+        Accounts
+        Max Buying Power\tExcess Liquidity\tRisk Status
+        2,842.13\t1,516.79\tSafe
+        SG 190.15 SGD
+        Market Value\tPosition P/L\tToday's P/L
+        154.15\t+42.79\t-0.83
+        Price/\tToday's
+        Symbol +\tMV/QTY :
+        Cost\tP/L
+        DBS\t154.16\t77.080\t-0.84
+        D05\t2\t57.30
+        US 130.45 USD
+        Market Value\tPosition P/L\tToday's P/L
+        2.09\t-1,230.43\t0.00
+        Price/\tToday's
+        Symbol +\tMV/QTY ÷
+        Cost\tP/L
+        Nauticus Rob...\t2.10\t0.6990\t0.00
+        KITT\t3\t362.88
+        Cash Universal Account(8687) - Crvoto
+        Watchlists\tMarkets\tAccounts\tWealth\tDiscover\tTrade
+        """
+    }
+    #endif
+
     func testDefaultAccountsCoverBothMarketsAndAllAssetClasses() {
         let accounts = SampleData.accounts
         XCTAssertEqual(accounts.count, 8)

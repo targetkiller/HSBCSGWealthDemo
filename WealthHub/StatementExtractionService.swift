@@ -6,6 +6,21 @@ import ImageIO
 
 /// Reads local statements only. Imported rows always need confirmation before saving.
 enum StatementExtractionService {
+    struct ExtractionResult {
+        var holdings: [Holding]
+        var account: DetectedAccount?
+        var warnings: [String]
+    }
+
+    struct DetectedAccount {
+        var name: String
+        var institution: String
+        var currency: Currency
+        var market: String?
+        var accountNumber: String?
+        var evidence: String
+    }
+
     enum ExtractionError: LocalizedError {
         case invalid(String)
         var errorDescription: String? {
@@ -23,7 +38,7 @@ enum StatementExtractionService {
         SampleData.holdings(in: "statement-preview")
     }
 
-    static func extract(url: URL) async throws -> [Holding] {
+    static func extract(url: URL) async throws -> ExtractionResult {
         try await Task.detached(priority: .userInitiated) {
             let hasAccess = url.startAccessingSecurityScopedResource()
             defer { if hasAccess { url.stopAccessingSecurityScopedResource() } }
@@ -41,7 +56,7 @@ enum StatementExtractionService {
                 guard let text = String(data: data, encoding: .utf8) else {
                     throw ExtractionError.invalid("Save the CSV as UTF-8 and try again.")
                 }
-                return try validated(StatementParser.parse(text))
+                return ExtractionResult(holdings: try validated(StatementParser.parse(text)), account: nil, warnings: [])
             }
             if fileExtension == "pdf" || data.starts(with: Data("%PDF-".utf8)) {
                 return try extractPDF(data)
@@ -59,11 +74,11 @@ enum StatementExtractionService {
                   ] as CFDictionary) else {
                 throw ExtractionError.invalid("Choose a PDF, a supported image, or the CSV template. Images must be under 40 megapixels.")
             }
-            return try recognizedHoldings(in: recognize(cgImage, orientation: .up))
+            return try parseStatementText(recognize(cgImage, orientation: .up))
         }.value
     }
 
-    static func extract(image: UIImage) async throws -> [Holding] {
+    static func extract(image: UIImage) async throws -> ExtractionResult {
         try await Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
             guard let cgImage = image.cgImage,
@@ -82,35 +97,42 @@ enum StatementExtractionService {
             case .rightMirrored: orientation = .rightMirrored
             @unknown default: orientation = .up
             }
-            return try recognizedHoldings(in: recognize(cgImage, orientation: orientation))
+            return try parseStatementText(recognize(cgImage, orientation: orientation))
         }.value
     }
 
-    private static func extractPDF(_ data: Data) throws -> [Holding] {
+    private static func extractPDF(_ data: Data) throws -> ExtractionResult {
         guard let document = PDFDocument(data: data), !document.isLocked else {
             throw ExtractionError.invalid("This PDF could not be opened. Export an unlocked statement and try again.")
         }
         guard document.pageCount > 0, document.pageCount <= maximumPages else {
             throw ExtractionError.invalid("Import a statement of up to 5 pages. Export just the holdings pages from a longer statement.")
         }
-        var holdings: [Holding] = []
+        var result = ExtractionResult(holdings: [], account: nil, warnings: [])
         for index in 0..<document.pageCount {
             try Task.checkCancellation()
             guard let page = document.page(at: index) else { continue }
-            let textRows = try parseText(page.string ?? "")
-            if !textRows.isEmpty {
-                holdings.append(contentsOf: textRows)
-                continue
+            var pageResult = try parseDocumentText(page.string ?? "")
+            if pageResult.holdings.isEmpty {
+                let bounds = page.bounds(for: .mediaBox)
+                if bounds.width > 0, bounds.height > 0 {
+                    let scale = min(3, 2_400 / max(bounds.width, bounds.height))
+                    let thumbnail = page.thumbnail(of: CGSize(width: bounds.width * scale, height: bounds.height * scale), for: .mediaBox)
+                    if let cgImage = thumbnail.cgImage {
+                        pageResult = try parseDocumentText(recognize(cgImage, orientation: .up))
+                    }
+                }
             }
-            let bounds = page.bounds(for: .mediaBox)
-            guard bounds.width > 0, bounds.height > 0 else { continue }
-            let scale = min(3, 2_400 / max(bounds.width, bounds.height))
-            let thumbnail = page.thumbnail(of: CGSize(width: bounds.width * scale, height: bounds.height * scale), for: .mediaBox)
-            if let cgImage = thumbnail.cgImage {
-                holdings.append(contentsOf: try parseText(recognize(cgImage, orientation: .up)))
+            result.holdings.append(contentsOf: pageResult.holdings)
+            result.warnings.append(contentsOf: pageResult.warnings)
+            if pageResult.holdings.isEmpty {
+                result.warnings.append("No holdings were recognized on page \(index + 1). Check that no positions are missing.")
             }
+            if result.account == nil { result.account = pageResult.account }
         }
-        return try validated(holdings)
+        result.holdings = try validated(result.holdings)
+        result.warnings = uniqueWarnings(result.warnings)
+        return result
     }
 
     private static func recognize(_ image: CGImage, orientation: CGImagePropertyOrientation) throws -> String {
@@ -133,20 +155,228 @@ enum StatementExtractionService {
                 lines.append([observation])
             }
         }
-        return lines.map { line in
+        let text = lines.map { line in
             line.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
                 .compactMap { $0.topCandidates(1).first?.string }
                 .joined(separator: "\t")
         }.joined(separator: "\n")
+        guard isFutuTable(text),
+              let quantityColumn = observations.first(where: { compactText($0.topCandidates(1).first?.string ?? "").contains("mv/qty") }),
+              let priceColumn = observations.first(where: { compactText($0.topCandidates(1).first?.string ?? "") == "price/" }),
+              let profitColumn = observations.first(where: { compactText($0.topCandidates(1).first?.string ?? "").hasPrefix("today") }),
+              quantityColumn.boundingBox.minX < priceColumn.boundingBox.minX,
+              priceColumn.boundingBox.minX < profitColumn.boundingBox.minX else { return text }
+
+        // FUTU stacks name/MV/price/P&L above symbol/quantity/cost. Preserve empty
+        // cells by position so a missing price cannot shift today's P&L into its place.
+        return lines.map { line in
+            let ordered = line.sorted { $0.boundingBox.minX < $1.boundingBox.minX }
+            let raw = ordered.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\t")
+            guard let first = ordered.first, let firstText = first.topCandidates(1).first?.string,
+                  first.boundingBox.minX < quantityColumn.boundingBox.minX - 0.03,
+                  validName(firstText), ordered.dropFirst().contains(where: {
+                      number($0.topCandidates(1).first?.string ?? "") != nil
+                  }) else { return raw }
+            var columns = Array(repeating: "", count: 4)
+            for observation in ordered {
+                guard let value = observation.topCandidates(1).first?.string else { continue }
+                let index: Int
+                if observation.boundingBox.minX < quantityColumn.boundingBox.minX - 0.03 { index = 0 }
+                else if observation.boundingBox.midX < priceColumn.boundingBox.minX - 0.015 { index = 1 }
+                else if observation.boundingBox.midX < profitColumn.boundingBox.minX - 0.015 { index = 2 }
+                else { index = 3 }
+                columns[index] += (columns[index].isEmpty ? "" : " ") + value
+            }
+            return columns.joined(separator: "\t")
+        }.joined(separator: "\n")
     }
 
-    private static func recognizedHoldings(in text: String) throws -> [Holding] {
-        try validated(parseText(text))
+    /// A local, editable import proposal. Recognition never establishes a bank link.
+    static func parseStatementText(_ text: String) throws -> ExtractionResult {
+        var result = try parseDocumentText(text)
+        result.holdings = try validated(result.holdings)
+        result.warnings = uniqueWarnings(result.warnings)
+        return result
+    }
+
+    private static func parseDocumentText(_ text: String) throws -> ExtractionResult {
+        guard text.utf8.count <= 500_000 else {
+            throw ExtractionError.invalid("This statement has too much text. Export only the holdings pages.")
+        }
+        if isFutuTable(text) { return try parseFutuTable(text) }
+        var result = try parseGenericText(text)
+        let header = statementHeader(in: text)
+        let normalized = compactText(header)
+        let hasBrand = firstMatch(#"\b(?:futu|moomoo)\b|富途"#, in: header) != nil
+        if hasBrand && (normalized.contains("accounts") || normalized.contains("statement")), !result.holdings.isEmpty {
+            result.account = futuAccount(currency: result.holdings.first?.currency ?? .SGD,
+                                         evidence: "FUTU / moomoo is printed in the imported statement. Confirm the institution and account details.")
+        }
+        return result
+    }
+
+    private static func compactText(_ text: String) -> String {
+        text.lowercased().replacingOccurrences(of: #"\s+"#, with: "", options: .regularExpression)
+    }
+
+    private static func statementHeader(in text: String) -> String {
+        // A held security can itself be FUTU. Institution evidence must precede
+        // the holdings table or explicit position rows, never come from a ticker.
+        text.components(separatedBy: .newlines).prefix { line in
+            let columns = tableColumns(line)
+            let header = columns.map(normalizedHeader)
+            if header.contains("quantity") && (header.contains("name") || header.contains("symbol")) { return false }
+            if compactText(line).contains("mv/qty") { return false }
+            if explicitHolding(line, defaultCurrency: .SGD) != nil { return false }
+            if columns.count >= 3 && columns.dropFirst().contains(where: { number($0) != nil }) { return false }
+            return true
+        }.joined(separator: "\n")
+    }
+
+    private static func isFutuTable(_ text: String) -> Bool {
+        let value = compactText(text)
+        let columns = value.contains("mv/qty") && value.contains("price/") && value.contains("cost") && value.contains("symbol")
+        let brand = firstMatch(#"\b(?:futu|moomoo)\b|富途"#, in: statementHeader(in: text)) != nil
+        let signature = ["accounts", "maxbuyingpower", "excessliquidity", "riskstatus", "marketvalue", "positionp/l"]
+            .allSatisfy(value.contains)
+        return columns && (brand || signature)
+    }
+
+    private static func futuAccount(currency: Currency, evidence: String) -> DetectedAccount {
+        DetectedAccount(name: "FUTU investment account", institution: "FUTU", currency: currency,
+                        market: nil, accountNumber: nil, evidence: evidence)
+    }
+
+    private static func parseFutuTable(_ text: String) throws -> ExtractionResult {
+        let lines = text.components(separatedBy: .newlines)
+        var holdings: [Holding] = []
+        var warnings = ["Only visible holdings are included. Account balances and buying power are excluded."]
+        var sectionCurrency: Currency?
+        var sectionRegion: String?
+        var firstCurrency: Currency?
+        var insideTable = false
+        var pending: [String]?
+
+        func unfinishedRow() {
+            if let pending {
+                warnings.append("\(pending[0]): quantity or average cost could not be read. This position was not imported.")
+            }
+            pending = nil
+        }
+
+        for rawLine in lines {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty else { continue }
+            // A market/currency section is a holdings currency, not evidence of the
+            // account's opening market. Totals in these headings are deliberately ignored.
+            if let match = firstMatch(#"(?:^|\s)(SG|US|HK|CN)\s+(?:[+−-]?[0-9]|\()"#, in: line),
+               let range = Range(match.range(at: 1), in: line) {
+                unfinishedRow()
+                insideTable = false
+                sectionCurrency = nil
+                sectionRegion = nil
+                let market = String(line[range]).uppercased()
+                let expected: [String: (Currency, String)] = [
+                    "SG": (.SGD, "Singapore"), "US": (.USD, "United States"),
+                    "HK": (.HKD, "Hong Kong"), "CN": (.CNY, "Mainland China")
+                ]
+                if let (expectedCurrency, region) = expected[market], currency(in: line) == expectedCurrency {
+                    sectionCurrency = expectedCurrency
+                    sectionRegion = region
+                    if firstCurrency == nil { firstCurrency = expectedCurrency }
+                } else {
+                    warnings.append("\(market): the section currency is missing or does not match its market. Positions in this section were not imported.")
+                }
+                continue
+            }
+            let compact = compactText(line)
+            if compact.contains("cashuniversalaccount") || compact.contains("watchlists") {
+                unfinishedRow()
+                insideTable = false
+                continue
+            }
+            if compact.contains("mv/qty") {
+                unfinishedRow()
+                insideTable = true
+                continue
+            }
+            guard insideTable else { continue }
+            if compact.contains("marketvalue") || compact.contains("positionp/l") {
+                unfinishedRow()
+                insideTable = false
+                continue
+            }
+            // Reconstructed Vision rows retain empty columns. Plain text tables may
+            // instead use pipes or repeated spaces, which are handled without guessing.
+            let columns = rawLine.contains("\t")
+                ? rawLine.components(separatedBy: "\t").map { $0.trimmingCharacters(in: .whitespaces) }
+                : tableColumns(line)
+            guard let name = columns.first, validName(name), !isFutuHeader(name) else { continue }
+
+            if let top = pending {
+                let isTicker = name.range(of: #"^[A-Z0-9][A-Z0-9.\-]{0,11}$"#, options: .regularExpression) != nil
+                // The second line has symbol/quantity/cost, with no daily P&L cell.
+                let isDetail = isTicker && columns.count >= 3 && (columns.count == 3 || columns.dropFirst(3).allSatisfy(\.isEmpty))
+                if isDetail {
+                    pending = nil
+                    guard let quantity = number(columns[1]), quantity > 0,
+                          let cost = number(columns[2]), let price = number(top[2]),
+                          let sectionCurrency else {
+                        warnings.append("\(top[0]): quantity, price, cost or currency is missing or unclear. This position was not imported.")
+                        continue
+                    }
+                    let holding = Holding(name: top[0], symbol: name, category: .stock, currency: sectionCurrency,
+                                          quantity: quantity, price: price, averageCost: cost, region: sectionRegion)
+                    guard validAmounts(holding) else {
+                        warnings.append("\(top[0]): check the quantity and amounts. This position was not imported.")
+                        continue
+                    }
+                    holdings.append(holding)
+                    if top[0].contains("...") || top[0].contains("…") {
+                        warnings.append("\(name): the security name is truncated in the image. Confirm or edit its full name.")
+                    }
+                    if let shownValue = number(top[1]), abs(shownValue - holding.value) > max(0.05, holding.value * 0.005) {
+                        warnings.append("\(name): the displayed market value differs from quantity × price. Check the recognized values.")
+                    }
+                    guard holdings.count <= maximumRows else {
+                        throw ExtractionError.invalid("Import up to 1,000 holdings at a time.")
+                    }
+                    continue
+                }
+                unfinishedRow()
+            }
+            // A first line needs the complete four-column layout. A loose three-cell
+            // fragment could be a ticker/quantity/cost line with its name row cropped.
+            if columns.count >= 4, number(columns[1]) != nil, number(columns[2]) != nil {
+                pending = columns
+            } else if columns.count > 1, columns.dropFirst().contains(where: { number($0) != nil }) {
+                warnings.append("\(name): the position row is incomplete. It was not imported; check the original image.")
+            }
+        }
+        unfinishedRow()
+        return ExtractionResult(holdings: holdings,
+                                account: futuAccount(currency: firstCurrency ?? holdings.first?.currency ?? .SGD,
+                                                     evidence: "Suggested from the FUTU / moomoo account screen. Confirm the account market and reporting currency."),
+                                warnings: uniqueWarnings(warnings))
+    }
+
+    private static func isFutuHeader(_ text: String) -> Bool {
+        let value = compactText(text)
+        return ["symbol", "mv/qty", "price", "cost", "today", "p/l"].contains(where: value.hasPrefix)
+    }
+
+    private static func uniqueWarnings(_ warnings: [String]) -> [String] {
+        var seen = Set<String>()
+        return warnings.filter { seen.insert($0).inserted }
     }
 
     /// Parses explicit "NAME 100 shares" rows or tables with named quantity columns.
     /// Unlabeled numbers are never guessed to be prices; unknown prices/costs remain zero.
     static func parseText(_ text: String) throws -> [Holding] {
+        try parseGenericText(text).holdings
+    }
+
+    private static func parseGenericText(_ text: String) throws -> ExtractionResult {
         guard text.utf8.count <= 500_000 else {
             throw ExtractionError.invalid("This statement has too much text. Export only the holdings pages.")
         }
@@ -154,6 +384,7 @@ enum StatementExtractionService {
         let defaultCurrency = currency(in: text) ?? .HKD
         var header: [String]?
         var result: [Holding] = []
+        var warnings: [String] = []
         for rawLine in lines {
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !line.isEmpty else { continue }
@@ -168,12 +399,20 @@ enum StatementExtractionService {
                 result.append(row)
             } else if let row = explicitHolding(line, defaultCurrency: defaultCurrency) {
                 result.append(row)
+            } else if header != nil, columns.count > 1, let name = columns.first, validName(name) {
+                warnings.append("\(name): a table row could not be fully recognized. Check that no positions are missing.")
             }
             guard result.count <= maximumRows else {
                 throw ExtractionError.invalid("Import up to 1,000 holdings at a time.")
             }
         }
-        return result
+        if result.contains(where: { $0.price == 0 || $0.averageCost == 0 }) {
+            warnings.append("Some prices or average costs are missing or zero. Review them before saving.")
+        }
+        if currency(in: text) == nil, !result.isEmpty {
+            warnings.append("Check each holding's currency, especially if the statement contains several currencies.")
+        }
+        return ExtractionResult(holdings: result, account: nil, warnings: uniqueWarnings(warnings))
     }
 
     private static func tableColumns(_ text: String) -> [String] {

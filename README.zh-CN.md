@@ -43,7 +43,7 @@ bash scripts/run-demo.sh
 1. **Wealth**：默认新加坡 HSBC 股票投资账户；选择单／多账户、切换报告币种、总市值、收益及 View details。金额统一使用 `1,234.00 SGD` 等币种后缀格式。
 2. **Portfolio analysis**：Generate AI analysis → 加载 → 展开的 What happened／What’s next；支持收起、重新生成。内容随所选持仓计算，不编造实时市场新闻。
 3. **Add other holdings to analyse**：打开原稿 Add a portfolio 底部弹层，可添加全球 HSBC 账户、连接其他银行或上传／扫描账单。全球 HSBC 路径选择现有账户而不重复创建；银行路径使用本地样本及确认步骤。
-4. **Upload or scan a statement**：Upload／Take a photo／Cancel；支持 CSV、PDF 和图片本地提取。模拟器无摄像头时可选择图库或示例账单。识别后进入 Extracted outcome，逐项编辑持仓，Proceed 后保存且只保存一次；取消不会创建账户。
+4. **Upload or scan a statement**：Upload 可从相册或文件选择，Take a photo 使用摄像头，无可用摄像头时可回退到相册；CSV、PDF 和图片均在本地识别。支持 FUTU／moomoo Accounts 截图的上下两行“市值／数量、现价／成本”结构及多币种持仓，并自动建议账户机构。Extracted outcome 展示可编辑的账户与持仓详情，Proceed 后只新增一个账户；取消不会创建账户，也不会连接真实券商。
 5. **返回分析**：新增持仓自动并入当前选择、刷新分析及总资产；View my global holdings 进入包含全部账户的 Global Investment View。
 6. **Global Investment View / GIV - L3**：顶部账户胶囊可跨银行、跨市场筛选；Markets 按“For Sept 14 Valentin's demo”设计，采用顶部占比条与纵向可展开的持仓明细，展示金额、收益及账户市场标签；Performance 默认 YTD，同时支持过去一月／一年／自定义日期、市场筛选、TWRR／MWRR、可拖动的收益曲线与 S&P 500／HSBC 参考组合／HSI 对比；Analysis 提供币种半环图、地区地图、行业面积图、分析卡片及可切换的压力场景。
 7. **Your holdings**：默认原稿的横向配置条和资产类别列表；支持展开明细，并切换 Allocation analysis／Risk analysis、双层环形图和压力情景。
@@ -64,7 +64,7 @@ BA 同事日常只需修改 **[Sample/Portfolios.csv](Sample/Portfolios.csv)**�
 - GIV 地区和行业图使用每项持仓的分类字段；导入数据未填写分类时，地区回退到所属账户市场，行业回退到资产类别。基金与结构性产品使用主要分类，不提供底层资产穿透分析。币种图按持仓报价币种聚合。
 - 风险散点按资产类别使用固定示例评分；压力测试对当前仓位施加美元下跌、股票市场下跌或香港持仓下跌等简单冲击。AI analysis 是本地模板生成，不调用大模型。
 - 新 Wealth 账单流程：导入文件上限 10 MB、PDF 最多 5 页、图片最多 4,000 万像素、最多 1,000 条持仓。CSV 使用严格七列格式；PDF 优先提取文本，必要时使用 Vision 本地 OCR；图片使用 Vision 本地 OCR。不会把无法识别的真实文件替换为演示持仓。
-- 文档解析支持清楚标明 shares／数量的持仓行和可识别的表格；复杂券商格式仍需人工核对。缺失的数量、价格或成本必须在预览中补齐；识别不可靠时显示错误供重试。地区／币种也应在预览中确认。不是通用券商账单解析服务。
+- 文档解析支持清楚标明 shares／数量的持仓行、可识别的表格，以及 FUTU／moomoo Accounts 截图中的 SG／US／HK／CN 币种分区；区分数量与市值、平均成本与当日损益。只导入可见持仓，不把账户余额或购买力当作现金持仓。名称被截断或行信息不完整时会提示核对；机构识别作为建议，账户名称、机构、市场和展示币种都可编辑，不猜测被截断的账号。每项持仓保留自身币种。其他券商布局可能需要手工修正或使用 CSV 导入。
 - 为便于演示，Try a sample statement 提供设计稿中的 8 条港股持仓，价格与成本为示例。既有菜单内的旧 CSV 导入页面仍限制 1 MB，建议演示使用 Wealth 新入口。
 - 数据存于应用沙盒 UserDefaults，仅用于 Demo。生产版本需补充安全存储、账户认证、授权服务、真实数据适配和合规评估。
 

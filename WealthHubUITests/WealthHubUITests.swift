@@ -314,6 +314,121 @@ final class WealthHubUITests: XCTestCase {
         XCTAssertEqual(importedAccount.count, 1, "Proceed must create exactly one statement portfolio.")
     }
 
+    func testFUTUScreenshotUploadReviewCancelAndSaveAccount() throws {
+        // Seed the simulator Photos library with the supplied screenshot as its newest
+        // photo, then run with TEST_RUNNER_FUTU_SCREENSHOT_UI_TEST=1. The private image
+        // stays outside the repository, and this flow uses the actual picker and OCR.
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["FUTU_SCREENSHOT_UI_TEST"] == "1",
+                          "Requires the supplied FUTU screenshot in the simulator Photos library.")
+        let app = launch()
+        openAddPortfolio(in: app)
+        app.buttons["portfolio.add.statement"].tap()
+        app.buttons["portfolio.statement.upload"].tap()
+        let choosePhoto = app.buttons["Choose a photo"]
+        XCTAssertTrue(choosePhoto.waitForExistence(timeout: 3))
+        choosePhoto.tap()
+        selectNewestStatementPhoto(in: app)
+        XCTAssertTrue(app.navigationBars["Extracted outcome"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["I’ve found 2 holdings in this statement:"].exists)
+        attachScreenshot(app, name: "FUTU screenshot recognised before confirmation")
+
+        // Recognition creates a draft only: dismissing it must not add an account.
+        app.buttons["portfolio.extracted.cancel"].tap()
+        XCTAssertTrue(app.buttons["banking.tab.wealth"].waitForExistence(timeout: 5))
+        scrollUntilHittable(app.buttons["accountSelector"], in: app, upwards: false)
+        app.buttons["accountSelector"].tap()
+        XCTAssertTrue(app.staticTexts["accountSelector.title"].waitForExistence(timeout: 3))
+        for market in ["sg", "hk"] {
+            app.buttons["accountSelector.market.\(market)"].tap()
+            XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "FUTU")).count, 0,
+                           "Cancelling recognition must not create a FUTU account in either market.")
+        }
+        app.buttons["accountSelector.close"].tap()
+
+        let addHoldings = app.buttons["portfolio.addHoldings"]
+        scrollUntilHittable(addHoldings, in: app)
+        addHoldings.tap()
+        app.buttons["portfolio.add.statement"].tap()
+        // Verify the camera entry on devices with either a camera or the supported
+        // library fallback, then use the same real screenshot for deterministic OCR.
+        XCTAssertTrue(app.navigationBars["Upload or scan a statement"].waitForExistence(timeout: 3))
+        let camera = app.buttons["portfolio.statement.camera"]
+        var previousCameraFrame = CGRect.zero
+        let cameraSettled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            let frame = camera.frame
+            defer { previousCameraFrame = frame }
+            return camera.exists && camera.isHittable && frame == previousCameraFrame && !frame.isEmpty
+        }, object: camera)
+        XCTAssertEqual(XCTWaiter.wait(for: [cameraSettled], timeout: 5), .completed,
+                       "Wait for the reopened statement sheet to finish moving before tapping its camera action.")
+        camera.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let savedPhoto = app.buttons["Choose a saved photo"]
+        let shutter = app.buttons["PhotoCapture"]
+        let cameraReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            savedPhoto.exists || shutter.exists
+        }, object: app)
+        XCTAssertEqual(XCTWaiter.wait(for: [cameraReady], timeout: 10), .completed,
+                       "The camera entry must open either the system camera or its photo-library fallback.")
+        if savedPhoto.exists {
+            savedPhoto.tap()
+        } else {
+            XCTAssertTrue(shutter.exists, "The system camera must expose its Take Picture control.")
+            app.buttons["DismissImagePickerButton"].tap()
+            let cameraDismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: shutter)
+            XCTAssertEqual(XCTWaiter.wait(for: [cameraDismissed], timeout: 5), .completed)
+            XCTAssertTrue(app.navigationBars["Upload or scan a statement"].waitForExistence(timeout: 3))
+            app.buttons["portfolio.statement.upload"].tap()
+            XCTAssertTrue(choosePhoto.waitForExistence(timeout: 3))
+            choosePhoto.tap()
+        }
+        selectNewestStatementPhoto(in: app)
+        XCTAssertTrue(app.navigationBars["Extracted outcome"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["I’ve found 2 holdings in this statement:"].exists)
+
+        let accountEdit = app.buttons["portfolio.extracted.account.edit"]
+        scrollUntilHittable(accountEdit, in: app, upwards: false)
+        accountEdit.tap()
+        XCTAssertTrue(app.navigationBars["Edit account"].waitForExistence(timeout: 3))
+        let accountName = app.textFields["portfolio.extracted.account.name"]
+        let institution = app.textFields["portfolio.extracted.account.institution"]
+        XCTAssertTrue((accountName.value as? String ?? "").contains("FUTU"))
+        XCTAssertEqual(institution.value as? String, "FUTU")
+        let accountHierarchy = XCTAttachment(string: app.debugDescription)
+        accountHierarchy.name = "Detected FUTU account editor accessibility hierarchy"
+        accountHierarchy.lifetime = .keepAlways
+        add(accountHierarchy)
+        attachScreenshot(app, name: "Detected FUTU account details")
+        assertClosedPickerValue("SGD", identifier: "portfolio.extracted.account.currency", in: app)
+        assertClosedPickerValue("Singapore", identifier: "portfolio.extracted.account.market", in: app)
+        let accountNumber = app.textFields["portfolio.extracted.account.number"]
+        let detectedNumber = accountNumber.value as? String ?? ""
+        XCTAssertTrue(detectedNumber.isEmpty || detectedNumber == accountNumber.placeholderValue,
+                      "The cropped crypto footer must not supply a guessed number for the stock account.")
+        replaceText(in: accountName, with: "FUTU Screenshot Portfolio")
+        app.buttons["portfolio.extracted.account.save"].tap()
+        XCTAssertTrue(app.navigationBars["Extracted outcome"].waitForExistence(timeout: 3))
+
+        assertExtractedHolding("D05", quantity: 2, price: 77.08, cost: 57.30, currency: "SGD", in: app)
+        assertExtractedHolding("KITT", quantity: 3, price: 0.699, cost: 362.88, currency: "USD", in: app)
+        scrollUntilHittable(accountEdit, in: app, upwards: false)
+        attachScreenshot(app, name: "Reviewed FUTU account with SGD and USD holdings")
+        let proceed = app.buttons["portfolio.extracted.proceed"]
+        XCTAssertTrue(proceed.isEnabled)
+        proceed.tap()
+        XCTAssertTrue(app.buttons["banking.tab.wealth"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["portfolio.analysis.updated"].firstMatch.waitForExistence(timeout: 8))
+
+        scrollUntilHittable(app.buttons["accountSelector"], in: app, upwards: false)
+        app.buttons["accountSelector"].tap()
+        XCTAssertTrue(app.staticTexts["accountSelector.title"].waitForExistence(timeout: 3))
+        app.buttons["accountSelector.market.sg"].tap()
+        let importedAccount = app.buttons.containing(.staticText, identifier: "FUTU Screenshot Portfolio")
+        scrollUntilHittable(importedAccount.firstMatch, in: app)
+        XCTAssertEqual(importedAccount.count, 1, "Proceed must save exactly one account containing both currency positions.")
+        XCTAssertEqual(importedAccount.firstMatch.value as? String, "Selected")
+        attachScreenshot(app, name: "Confirmed FUTU account in account selector")
+    }
+
     func testAddingExistingGlobalHSBCAccountsDoesNotDuplicateThem() throws {
         let app = launch()
         openAddPortfolio(in: app)
@@ -558,6 +673,58 @@ final class WealthHubUITests: XCTestCase {
         let reference = app.buttons["giv.performance.benchmark.HSBC reference portfolio"]
         scrollUntilHittable(reference, in: app, file: file, line: line)
         XCTAssertTrue(reference.isSelected, "The HSBC reference must be enabled without tapping its legend.", file: file, line: line)
+    }
+
+    private func selectNewestStatementPhoto(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        // The system picker follows the device language, independently of the app.
+        // Its asset identifier is stable in English and Chinese; the library shows
+        // the newest seeded photo first, ahead of the simulator's stock photos.
+        let photos = app.scrollViews["photosView_content_scroll_view"].images.matching(identifier: "PXGGridLayout-Info")
+        guard photos.firstMatch.waitForExistence(timeout: 8) else {
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "Photo picker accessibility hierarchy"
+            hierarchy.lifetime = .keepAlways
+            add(hierarchy)
+            attachScreenshot(app, name: "Photo picker needs seeded statement image")
+            XCTFail("The native photo picker did not expose the seeded photo.", file: file, line: line)
+            return
+        }
+        // Photos exposes thumbnails as virtual accessibility images, which XCTest
+        // can resolve but cannot always hit-test. Tap the observed thumbnail centre.
+        photos.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
+    private func assertExtractedHolding(_ symbol: String, quantity: Double, price: Double, cost: Double, currency: String,
+                                        in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let holding = app.buttons["portfolio.extracted.holding.\(symbol)"]
+        scrollUntilHittable(holding, in: app, file: file, line: line)
+        holding.tap()
+        XCTAssertTrue(app.navigationBars["Edit holding"].waitForExistence(timeout: 3), file: file, line: line)
+        XCTAssertEqual(app.textFields["portfolio.holding.symbol"].value as? String, symbol, file: file, line: line)
+        attachScreenshot(app, name: "Extracted \(symbol) holding details")
+        assertClosedPickerValue(currency, identifier: "portfolio.holding.currency", in: app, file: file, line: line)
+        for (field, expected) in [("quantity", quantity), ("price", price), ("cost", cost)] {
+            let value = app.textFields["portfolio.holding.\(field)"].value as? String ?? ""
+            XCTAssertEqual(Double(value) ?? .nan, expected, accuracy: 0.0001, "Incorrect extracted \(symbol) \(field)", file: file, line: line)
+        }
+        app.navigationBars["Edit holding"].buttons["Cancel"].tap()
+        XCTAssertTrue(app.navigationBars["Extracted outcome"].waitForExistence(timeout: 3), file: file, line: line)
+    }
+
+    private func assertClosedPickerValue(_ expected: String, identifier: String, in app: XCUIApplication,
+                                         file: StaticString = #filePath, line: UInt = #line) {
+        // SwiftUI can assign a Picker identifier to both its empty accessibility
+        // container and its menu button. Only inspect this closed field and its
+        // descendants, so another holding's currency cannot satisfy the assertion.
+        let fields = app.descendants(matching: .any).matching(identifier: identifier)
+        XCTAssertTrue(fields.firstMatch.waitForExistence(timeout: 3), file: file, line: line)
+        let nodes = fields.allElementsBoundByIndex.flatMap { field in
+            [field] + field.descendants(matching: .any).allElementsBoundByIndex
+        }
+        let fieldValues = Set(nodes.flatMap { node in [node.label, node.value as? String ?? ""] })
+        XCTAssertTrue(fieldValues.contains(expected),
+                      "Expected \(identifier) to display exactly \(expected); field accessibility values: \(fieldValues.sorted())",
+                      file: file, line: line)
     }
 
     private func openAddPortfolio(in app: XCUIApplication) {

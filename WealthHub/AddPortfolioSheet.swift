@@ -14,6 +14,9 @@ struct AddPortfolioSheet: View {
     @State private var selectedHSBC = Set<UUID>()
     @State private var extractedHoldings: [Holding] = []
     @State private var statementSource = ""
+    @State private var statementAccount = SampleData.makeAccount(template: "statement-review")
+    @State private var accountEvidence: String?
+    @State private var extractionWarnings: [String] = []
     @State private var completed = false
 
     private var hsbcAccounts: [InvestmentAccount] {
@@ -125,16 +128,30 @@ struct AddPortfolioSheet: View {
         case .bank:
             OtherBankPortfolioConnection { account in finish(account: account) }
         case .statement:
-            PortfolioStatementUpload(onCancel: { dismiss() }) { holdings, source in
-                extractedHoldings = holdings
+            PortfolioStatementUpload(onCancel: { dismiss() }) { result, source in
+                extractedHoldings = result.holdings
                 statementSource = source
+                extractionWarnings = result.warnings
+                accountEvidence = result.account?.evidence
+                var account = SampleData.makeAccount(template: "statement-review")
+                account.note = account.note.replacingOccurrences(of: "{source}", with: source)
+                if let detected = result.account {
+                    account.name = detected.name
+                    account.institution = detected.institution
+                    account.currency = detected.currency
+                    account.market = detected.market ?? SampleData.row("markets", id: SampleData.setting("defaultMarketID")).string("name")
+                    account.accountNumber = detected.accountNumber
+                }
+                statementAccount = account
                 path.append(.extracted)
             }
         case .extracted:
-            ExtractedPortfolioReview(holdings: $extractedHoldings, source: statementSource, onCancel: { dismiss() }) {
-                var account = SampleData.makeAccount(template: "statement-review")
+            ExtractedPortfolioReview(holdings: $extractedHoldings, account: $statementAccount, source: statementSource,
+                                     accountEvidence: accountEvidence, warnings: extractionWarnings, onCancel: { dismiss() }) {
+                var account = statementAccount
+                account.name = account.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                account.institution = account.institution.trimmingCharacters(in: .whitespacesAndNewlines)
                 account.colorIndex = store.accounts.count
-                account.note = account.note.replacingOccurrences(of: "{source}", with: statementSource)
                 account.holdings = extractedHoldings
                 finish(account: account)
             }
@@ -317,10 +334,12 @@ private struct OtherBankPortfolioConnection: View {
 
 private struct PortfolioStatementUpload: View {
     var onCancel: () -> Void
-    var onExtracted: ([Holding], String) -> Void
+    var onExtracted: (StatementExtractionService.ExtractionResult, String) -> Void
+    @State private var uploadSourcePresented = false
     @State private var importerPresented = false
-    @State private var cameraFallbackPresented = false
+    @State private var choosingCameraFallback = false
     @State private var imageSource: PortfolioImageSource?
+    @State private var pickedImage: UIImage?
     @State private var loading = false
     @State private var error: String?
     @State private var extractionTask: Task<Void, Never>?
@@ -329,12 +348,12 @@ private struct PortfolioStatementUpload: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 explanation("How to provide your portfolio?", text: "Upload a statement, screenshot or photo of your investment holdings. You can also take a photo of your statement. CSV, PDF and image files are supported.")
-                explanation("What we will do?", text: "We will extract the holdings from your statement so you can review and edit the details before adding them to your portfolio for analysis.")
+                explanation("What we will do?", text: "We will look for your account provider and holdings, including currencies, quantities, prices and average costs. Review the extracted details before adding the account to your portfolio. Files are processed on this device.")
 
                 if loading {
                     HStack(spacing: 12) {
                         ProgressView().tint(Theme.red)
-                        Text("Extracting your holdings…").font(.system(size: 14))
+                        Text("Recognising your account and holdings…").font(.system(size: 14))
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(18).background(Theme.background)
                         .accessibilityIdentifier("portfolio.statement.loading")
                 }
@@ -349,13 +368,16 @@ private struct PortfolioStatementUpload: View {
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 12) {
-                PrimaryButton(title: "Upload") { importerPresented = true }
+                PrimaryButton(title: "Upload") {
+                    choosingCameraFallback = false
+                    uploadSourcePresented = true
+                }
                     .accessibilityIdentifier("portfolio.statement.upload")
                 PrimaryButton(title: "Take a photo", action: openCamera)
                     .accessibilityIdentifier("portfolio.statement.camera")
                 Button("Try a sample statement") {
                     error = nil
-                    onExtracted(StatementExtractionService.sampleHoldings, SampleData.setting("statementPreviewSource"))
+                    showSample()
                 }
                 .font(.system(size: 13)).foregroundStyle(Theme.muted)
                 .padding(.vertical, 3)
@@ -376,6 +398,19 @@ private struct PortfolioStatementUpload: View {
             }
             .padding(20).background(.white)
         }
+        .confirmationDialog(choosingCameraFallback ? "Camera unavailable" : "Upload a statement",
+                            isPresented: $uploadSourcePresented, titleVisibility: .visible) {
+            if choosingCameraFallback {
+                Button("Choose a saved photo") { imageSource = .library }
+                Button("Try a sample statement", action: showSample)
+            } else {
+                Button("Choose a photo") { imageSource = .library }
+                Button("Choose a file") { importerPresented = true }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            if choosingCameraFallback { Text(cameraUnavailableMessage) }
+        }
         .fileImporter(isPresented: $importerPresented, allowedContentTypes: [.commaSeparatedText, .plainText, .pdf, .image], allowsMultipleSelection: false) { result in
             switch result {
             case .success(let urls):
@@ -384,17 +419,17 @@ private struct PortfolioStatementUpload: View {
             case .failure(let failure): error = failure.localizedDescription
             }
         }
-        .sheet(item: $imageSource) { source in
+        .sheet(item: $imageSource, onDismiss: {
+            if let image = pickedImage {
+                pickedImage = nil
+                extract(image: image)
+            }
+        }) { source in
             PortfolioImagePicker(source: source) { image in
+                pickedImage = image
                 imageSource = nil
-                if let image { extract(image: image) }
             }.ignoresSafeArea()
         }
-        .confirmationDialog("Camera unavailable", isPresented: $cameraFallbackPresented, titleVisibility: .visible) {
-            Button("Choose a saved photo") { imageSource = .library }
-            Button("Try a sample statement") { onExtracted(StatementExtractionService.sampleHoldings, SampleData.setting("statementPreviewSource")) }
-            Button("Cancel", role: .cancel) { }
-        } message: { Text(cameraUnavailableMessage) }
         .onDisappear { extractionTask?.cancel() }
     }
 
@@ -415,7 +450,8 @@ private struct PortfolioStatementUpload: View {
 
     private func openCamera() {
         guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
-            cameraFallbackPresented = true
+            choosingCameraFallback = true
+            uploadSourcePresented = true
             return
         }
         Task { @MainActor in
@@ -433,18 +469,22 @@ private struct PortfolioStatementUpload: View {
         beginExtraction(source: "statement photo") { try await StatementExtractionService.extract(image: image) }
     }
 
-    private func beginExtraction(source: String, operation: @escaping () async throws -> [Holding]) {
+    private func showSample() {
+        onExtracted(.init(holdings: StatementExtractionService.sampleHoldings, account: nil, warnings: []), SampleData.setting("statementPreviewSource"))
+    }
+
+    private func beginExtraction(source: String, operation: @escaping () async throws -> StatementExtractionService.ExtractionResult) {
         extractionTask?.cancel()
         error = nil
         loading = true
         extractionTask = Task { @MainActor in
             do {
-                let holdings = try await operation()
+                let result = try await operation()
                 guard !Task.isCancelled else { return }
                 loading = false
-                if holdings.isEmpty {
+                if result.holdings.isEmpty {
                     error = "No holdings were found. Try a clearer statement or upload a CSV with your holdings."
-                } else { onExtracted(holdings, source) }
+                } else { onExtracted(result, source) }
             } catch {
                 guard !Task.isCancelled else { return }
                 loading = false
@@ -456,46 +496,62 @@ private struct PortfolioStatementUpload: View {
 
 private struct ExtractedPortfolioReview: View {
     @Binding var holdings: [Holding]
+    @Binding var account: InvestmentAccount
     let source: String
+    let accountEvidence: String?
+    let warnings: [String]
     var onCancel: () -> Void
     var onProceed: () -> Void
     @State private var editing: Holding?
+    @State private var editingAccount = false
 
-    private var allValid: Bool { !holdings.isEmpty && holdings.allSatisfy(portfolioHoldingIsValid) }
+    private var allValid: Bool { portfolioStatementAccountIsValid(account) && !holdings.isEmpty && holdings.allSatisfy(portfolioHoldingIsValid) }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("I’ve found \(holdings.count) holdings in this statement:")
                     .font(.system(size: 14)).lineSpacing(3).padding(.top, 16)
-                Text(source == SampleData.setting("statementPreviewSource") ? "Sample statement · Review the details before proceeding." : "Check the extracted quantities, currencies, prices and average costs before proceeding. Missing values are shown as 0.")
+                Text(source == SampleData.setting("statementPreviewSource") ? "Sample statement · Review the details before proceeding." : "Review the account and holdings before adding them to your portfolio.")
                     .font(.system(size: 13)).foregroundStyle(Theme.muted).lineSpacing(3)
+                accountCard
+                ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in
+                    Label(warning, systemImage: "info.circle")
+                        .font(.system(size: 13)).foregroundStyle(Theme.muted).lineSpacing(3)
+                }
                 if !allValid {
-                    Label("Add missing prices and average costs, and check the highlighted holdings before proceeding.", systemImage: "exclamationmark.circle")
+                    Label("Complete the account details and any missing holding values before proceeding.", systemImage: "exclamationmark.circle")
                         .font(.system(size: 13)).foregroundStyle(Theme.red).lineSpacing(3)
                 }
                 VStack(spacing: 0) {
                     ForEach(holdings) { holding in
                         Button { editing = holding } label: {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(holding.name).font(.system(size: 14, weight: .medium))
-                                        .lineLimit(1).minimumScaleFactor(0.85)
-                                    if !portfolioHoldingIsValid(holding) {
-                                        Text("\(holding.symbol) · Review required")
-                                            .font(.system(size: 11)).foregroundStyle(Theme.red)
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(spacing: 12) {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(holding.name).font(.system(size: 15, weight: .medium))
+                                            .lineLimit(1).minimumScaleFactor(0.85)
+                                        Text("\(holding.symbol) · \(holding.currency.rawValue)")
+                                            .font(.system(size: 12)).foregroundStyle(Theme.muted)
                                     }
+                                    Spacer(minLength: 4)
+                                    Text("\(holding.quantity.formatted(.number.precision(.fractionLength(0...4)))) shares")
+                                        .font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize()
+                                    Image(systemName: "pencil").font(.system(size: 16, weight: .light))
                                 }
-                                Spacer(minLength: 4)
-                                Text("\(holding.quantity.formatted(.number.precision(.fractionLength(0...4)))) shares")
-                                    .font(.system(size: 12)).foregroundStyle(Theme.muted).fixedSize()
-                                Image(systemName: "pencil")
-                                    .font(.system(size: 16, weight: .light)).padding(.leading, 4)
+                                HStack(alignment: .top, spacing: 10) {
+                                    holdingAmount("Price", value: holding.price)
+                                    holdingAmount("Average cost", value: holding.averageCost)
+                                    holdingAmount("Market value", value: holding.value, fractionalDigits: 2)
+                                }
+                                if !portfolioHoldingIsValid(holding) {
+                                    Text("Review required").font(.system(size: 11)).foregroundStyle(Theme.red)
+                                }
                             }
-                            .frame(minHeight: 38).contentShape(Rectangle())
+                            .padding(.vertical, 14).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Edit \(holding.name), \(holding.quantity.formatted()) shares")
+                        .accessibilityLabel("Edit \(holding.name), \(holding.symbol), \(holding.quantity.formatted()) shares, \(holding.currency.rawValue), price \(holding.price.formatted()), average cost \(holding.averageCost.formatted())")
                         .accessibilityIdentifier("portfolio.extracted.holding.\(holding.symbol)")
                         Divider()
                     }
@@ -516,6 +572,104 @@ private struct ExtractedPortfolioReview: View {
         .sheet(item: $editing) { holding in
             PortfolioHoldingDraftEditor(holding: holding) { updated in
                 if let index = holdings.firstIndex(where: { $0.id == updated.id }) { holdings[index] = updated }
+            }
+        }
+        .sheet(isPresented: $editingAccount) {
+            PortfolioStatementAccountEditor(account: account) { account = $0 }
+        }
+    }
+
+    private var accountCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(accountEvidence == nil ? "Import into a new account" : "Detected account")
+                .font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.muted)
+            Button { editingAccount = true } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    BankMark(bank: account.institution, size: 30)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(account.name).font(.system(size: 16, weight: .medium))
+                        Text("\(account.institution) · \(account.market) · \(account.currency.rawValue)")
+                            .font(.system(size: 12)).foregroundStyle(Theme.muted)
+                        if let number = account.accountNumber, !number.isEmpty {
+                            Text(number).font(.system(size: 12)).foregroundStyle(Theme.muted)
+                        }
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "pencil").font(.system(size: 16, weight: .light))
+                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Edit account, \(account.name), \(account.institution), \(account.market), \(account.currency.rawValue)")
+            .accessibilityIdentifier("portfolio.extracted.account.edit")
+            Text(accountEvidence ?? "You can edit the account name, institution, market and reporting currency.")
+                .font(.system(size: 12)).foregroundStyle(Theme.muted).lineSpacing(3)
+        }.padding(16).background(Theme.background)
+    }
+
+    private func holdingAmount(_ title: String, value: Double, fractionalDigits: Int = 4) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 11)).foregroundStyle(Theme.muted)
+            Text(value.formatted(.number.locale(Locale(identifier: "en_SG")).precision(.fractionLength(2...fractionalDigits))))
+                .font(.system(size: 13, weight: .medium)).lineLimit(1).minimumScaleFactor(0.75)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private func portfolioStatementAccountIsValid(_ account: InvestmentAccount) -> Bool {
+    !account.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+    !account.institution.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+    !account.market.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+}
+
+private struct PortfolioStatementAccountEditor: View {
+    @Environment(\.dismiss) private var dismiss
+    @State var account: InvestmentAccount
+    var onSave: (InvestmentAccount) -> Void
+
+    private var markets: [String] {
+        let names = SampleData.rows("markets").map { $0.string("name") }
+        return names.contains(account.market) ? names : names + [account.market]
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Account details") {
+                    TextField("Account name", text: $account.name)
+                        .accessibilityIdentifier("portfolio.extracted.account.name")
+                    TextField("Bank / institution", text: $account.institution)
+                        .accessibilityIdentifier("portfolio.extracted.account.institution")
+                    TextField("Account number (optional)", text: Binding(
+                        get: { account.accountNumber ?? "" },
+                        set: { account.accountNumber = $0.isEmpty ? nil : $0 }
+                    )).autocorrectionDisabled()
+                        .accessibilityIdentifier("portfolio.extracted.account.number")
+                    Picker("Account market", selection: $account.market) {
+                        ForEach(markets, id: \.self) { Text($0).tag($0) }
+                    }.accessibilityIdentifier("portfolio.extracted.account.market")
+                    Picker("Reporting currency", selection: $account.currency) {
+                        ForEach(Currency.allCases) { Text($0.rawValue).tag($0) }
+                    }.accessibilityIdentifier("portfolio.extracted.account.currency")
+                }
+                Section {
+                    Text("Confirm where to organise this account. Each holding keeps the currency shown in the statement, regardless of the account's reporting currency.")
+                        .font(.footnote).foregroundStyle(Theme.muted)
+                }
+            }
+            .navigationTitle("Edit account").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        account.name = account.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        account.institution = account.institution.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let number = account.accountNumber?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        account.accountNumber = number?.isEmpty == false ? number : nil
+                        onSave(account)
+                        dismiss()
+                    }.disabled(!portfolioStatementAccountIsValid(account))
+                        .accessibilityIdentifier("portfolio.extracted.account.save")
+                }
             }
         }
     }
